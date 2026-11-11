@@ -8,7 +8,11 @@
                                     dia = 0 (domingo) a 6 (sábado)
      users/{uid}/registros/{data} → { feitos: [ids dos exercícios], atualizadoEm }
                                     data = 'AAAA-MM-DD'
-     codigos/{codigo}             → { uid }   código de conexão (usado na etapa 2)
+     codigos/{codigo}             → { uid }   código de conexão
+     conexoes/{atleta}_{viewer}   → { atleta, viewer, codigo, atletaNome, viewerNome, status, perm, criadoEm }
+                                    atleta = quem treina; viewer = quem acompanha
+                                    status = 'pendente' | 'aceita'
+                                    perm = { treinos, checkins, peso } (o que o viewer pode ver)
    ========================================================= */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -18,8 +22,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, query, where, documentId, onSnapshot,
-  setDoc, updateDoc, runTransaction, serverTimestamp, arrayUnion, arrayRemove,
+  collection, doc, query, where, documentId, onSnapshot, getDoc,
+  setDoc, updateDoc, deleteDoc, runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -120,6 +124,48 @@ export function escutarRegistros(uid, desde, callback, onError) {
     callback(registros);
   }, onError);
 }
+
+// ---------- Conexões (quem acompanha quem) ----------
+
+const erroComCodigo = (code, message) => Object.assign(new Error(message), { code });
+
+// Quem acompanha digita o código de quem treina e manda um pedido
+export async function pedirConexao(meuUid, meuNome, codigoDigitado) {
+  // Aceita "fit-ab12", "FIT AB12" ou só "AB12"
+  const codigo = 'FIT-' + codigoDigitado.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FIT/, '');
+  if (!/^FIT-[A-Z0-9]{4}$/.test(codigo)) throw erroComCodigo('codigo/formato', 'O código tem este formato: FIT-AB12.');
+  const snap = await getDoc(doc(db, 'codigos', codigo));
+  if (!snap.exists()) throw erroComCodigo('codigo/nao-existe', 'Não achamos esse código. Confira com a pessoa.');
+  const atleta = snap.data().uid;
+  if (atleta === meuUid) throw erroComCodigo('codigo/proprio', 'Esse é o seu próprio código.');
+  const ref = doc(db, 'conexoes', `${atleta}_${meuUid}`);
+  try {
+    await setDoc(ref, {
+      atleta, viewer: meuUid, codigo, atletaNome: '', viewerNome: meuNome, status: 'pendente',
+      perm: { treinos: true, checkins: true, peso: false }, criadoEm: serverTimestamp(),
+    });
+  } catch (err) {
+    // Já existe pedido ou conexão com essa pessoa (as regras não deixam sobrescrever)
+    if (err.code === 'permission-denied') throw erroComCodigo('codigo/repetido', 'Você já tem um pedido ou conexão com essa pessoa.');
+    throw err;
+  }
+}
+
+// Todas as conexões em que eu apareço, dos dois lados
+export function escutarConexoes(uid, callback, onError) {
+  const lados = { atleta: [], viewer: [] };
+  const juntar = () => callback([...lados.atleta, ...lados.viewer]);
+  const ouvir = campo => onSnapshot(query(collection(db, 'conexoes'), where(campo, '==', uid)), snap => {
+    lados[campo] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    juntar();
+  }, onError);
+  const parar = [ouvir('atleta'), ouvir('viewer')];
+  return () => parar.forEach(f => f());
+}
+
+export const aceitarConexao = (id, meuNome) => updateDoc(doc(db, 'conexoes', id), { status: 'aceita', atletaNome: meuNome });
+export const salvarPermissoes = (id, perm) => updateDoc(doc(db, 'conexoes', id), { perm });
+export const removerConexao = id => deleteDoc(doc(db, 'conexoes', id));
 
 export const marcarExercicio = (uid, data, exId, feito) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {

@@ -1,16 +1,24 @@
 rules_version = '2';
 
-// Regras de segurança do Treino Junto (etapa 1).
+// Regras de segurança do Treino Junto (etapa 2).
 // Copie tudo e cole no Console do Firebase > Firestore Database > Regras > Publicar.
 //
-// Resumo: cada pessoa só lê e altera os próprios dados.
-// Na etapa 2 entram as conexões (quem acompanha passa a ler o que foi liberado).
+// Resumo: cada pessoa só altera os próprios dados.
+// Quem acompanha só LÊ o que a pessoa liberou, e só depois que ela aceitou o pedido.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function logado() { return request.auth != null; }
     function eu(uid) { return logado() && request.auth.uid == uid; }
+
+    // Quem está logado acompanha "uid", com o pedido aceito e a permissão "chave" ligada
+    function liberado(uid, chave) {
+      let caminho = /databases/$(database)/documents/conexoes/$(uid + '_' + request.auth.uid);
+      return logado() && exists(caminho)
+        && get(caminho).data.status == 'aceita'
+        && get(caminho).data.perm[chave] == true;
+    }
 
     function perfilValido() {
       let d = request.resource.data;
@@ -29,7 +37,8 @@ service cloud.firestore {
       allow update: if eu(uid) && perfilValido() && request.resource.data.codigo == resource.data.codigo;
 
       match /plano/{dia} {
-        allow read, delete: if eu(uid);
+        allow read: if eu(uid) || liberado(uid, 'treinos');
+        allow delete: if eu(uid);
         allow write: if eu(uid) && dia in ['0', '1', '2', '3', '4', '5', '6']
           && request.resource.data.keys().hasOnly(['titulo', 'exercicios'])
           && request.resource.data.titulo is string && request.resource.data.titulo.size() <= 60
@@ -37,7 +46,8 @@ service cloud.firestore {
       }
 
       match /registros/{data} {
-        allow read, delete: if eu(uid);
+        allow read: if eu(uid) || liberado(uid, 'treinos');
+        allow delete: if eu(uid);
         allow write: if eu(uid) && data.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
           && request.resource.data.feitos is list && request.resource.data.feitos.size() <= 40;
       }
@@ -50,6 +60,40 @@ service cloud.firestore {
       allow create: if logado() && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
         && codigo.matches('^FIT-[A-Z0-9]{4}$');
+    }
+
+    // Conexões: o id é sempre "{quem treina}_{quem acompanha}"
+    match /conexoes/{id} {
+      function ehParte() {
+        return logado() && (resource.data.atleta == request.auth.uid || resource.data.viewer == request.auth.uid);
+      }
+      function permValida(p) {
+        return p.keys().hasOnly(['treinos', 'checkins', 'peso'])
+          && p.treinos is bool && p.checkins is bool && p.peso is bool;
+      }
+
+      allow read: if ehParte();
+
+      // Quem acompanha cria o pedido, sempre pendente, e precisa saber o código da pessoa
+      allow create: if logado()
+        && request.resource.data.keys().hasOnly(['atleta', 'viewer', 'codigo', 'atletaNome', 'viewerNome', 'status', 'perm', 'criadoEm'])
+        && request.resource.data.viewer == request.auth.uid
+        && request.resource.data.atleta != request.auth.uid
+        && id == request.resource.data.atleta + '_' + request.auth.uid
+        && request.resource.data.status == 'pendente'
+        && request.resource.data.viewerNome is string && request.resource.data.viewerNome.size() <= 40
+        && permValida(request.resource.data.perm)
+        && get(/databases/$(database)/documents/codigos/$(request.resource.data.codigo)).data.uid == request.resource.data.atleta;
+
+      // Só quem treina aceita o pedido e escolhe o que libera
+      allow update: if logado() && resource.data.atleta == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'perm', 'atletaNome'])
+        && request.resource.data.status in ['pendente', 'aceita']
+        && request.resource.data.atletaNome is string && request.resource.data.atletaNome.size() <= 40
+        && permValida(request.resource.data.perm);
+
+      // Qualquer um dos dois pode desfazer a conexão (recusar, remover ou parar de acompanhar)
+      allow delete: if ehParte();
     }
   }
 }

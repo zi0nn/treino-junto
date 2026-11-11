@@ -56,8 +56,13 @@ const S = {
   aba: 'hoje',
   diaSel: hoje().getDay(),
   modoLogin: 'entrar',
+  conexoes: [],      // todas as conexões em que eu apareço (dos dois lados)
+  acompId: null,     // id da conexão que estou vendo na aba Acompanhar
+  acomp: null,       // { chave, plano, registros, carregado, bloqueado } da pessoa acompanhada
+  confirmar: null,   // id da conexão esperando o segundo toque em "Remover"
 };
 let pararEscutas = [];
+let pararAcomp = [];
 let cadastrando = false;
 
 // ---------- Ícones ----------
@@ -65,31 +70,41 @@ const ICONE = {
   hoje: '<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>',
   semana: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   perfil: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  acompanhar: '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
-const ABAS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['perfil', 'Perfil']];
+const ABAS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['acompanhar', 'Acompanhar'], ['perfil', 'Perfil']];
 
 function mostrarNav(visivel) {
   $('#nav').hidden = !visivel;
-  if (visivel) $('#navin').innerHTML = ABAS.map(([k, l]) => `<button class="${S.aba === k ? 'on' : ''}" data-aba="${k}">${ICONE[k]}${l}</button>`).join('');
+  const pedidos = pedidosRecebidos().length;
+  if (visivel) $('#navin').innerHTML = ABAS.map(([k, l]) => `<button class="${S.aba === k ? 'on' : ''}" data-aba="${k}">${ICONE[k]}${l}${k === 'perfil' && pedidos ? ` <span class="badge">${pedidos}</span>` : ''}</button>`).join('');
 }
 
+// ---------- Conexões ----------
+const meuUid = () => S.user?.uid;
+const pedidosRecebidos = () => S.conexoes.filter(c => c.atleta === meuUid() && c.status === 'pendente');
+const meusAcompanhantes = () => S.conexoes.filter(c => c.atleta === meuUid() && c.status === 'aceita');
+const quemAcompanho = () => S.conexoes.filter(c => c.viewer === meuUid());
+const nomeDe = (c, lado) => (lado === 'atleta' ? c.atletaNome : c.viewerNome) || 'Alguém';
+
 // ---------- Regras do dia ----------
-function statusDia(d) {
+function statusDia(d, planoSemana = S.plano, registros = S.registros) {
   const data = isoDe(d);
-  const plano = S.plano[d.getDay()];
+  const plano = planoSemana[d.getDay()];
   const temTreino = plano && plano.exercicios?.length;
-  const feitos = S.registros[data]?.feitos?.length || 0;
+  const feitos = registros[data]?.feitos?.length || 0;
   if (feitos) return 'done';
   if (!temTreino) return 'rest';
   const hojeIso = isoDe(hoje());
   if (data < hojeIso) return 'missed';
   return 'future';
 }
-function resumoSemana() {
+function resumoSemana(planoSemana = S.plano, registros = S.registros) {
   const semana = semanaAtual();
   return {
-    feitos: semana.filter(d => statusDia(d) === 'done').length,
-    planejados: semana.filter(d => S.plano[d.getDay()]?.exercicios?.length).length,
+    feitos: semana.filter(d => statusDia(d, planoSemana, registros) === 'done').length,
+    planejados: semana.filter(d => planoSemana[d.getDay()]?.exercicios?.length).length,
+    faltas: semana.filter(d => statusDia(d, planoSemana, registros) === 'missed').length,
   };
 }
 
@@ -129,13 +144,13 @@ function cabecalho() {
     <h1>Oi, ${esc(nome.split(' ')[0])}</h1></div></div>`;
 }
 
-function cartaoTreino(dia, data) {
-  const plano = S.plano[dia];
+function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.registros, editavel = true) {
+  const plano = planoSemana[dia];
   if (!plano?.exercicios?.length) {
     return `<div class="card stack"><h3>Dia de descanso</h3><p class="muted small">Nenhum treino planejado para ${DIAS_NOME[dia].toLowerCase()}.</p>
-      <button class="btn sm ghost" data-aba="semana" data-dia="${dia}">Montar treino deste dia</button></div>`;
+      ${editavel ? `<button class="btn sm ghost" data-aba="semana" data-dia="${dia}">Montar treino deste dia</button>` : ''}</div>`;
   }
-  const feitos = S.registros[data]?.feitos || [];
+  const feitos = registros[data]?.feitos || [];
   const qtd = plano.exercicios.filter(e => feitos.includes(e.id)).length;
   const pct = Math.round(100 * qtd / plano.exercicios.length);
   return `<div class="card stack">
@@ -144,7 +159,8 @@ function cartaoTreino(dia, data) {
     <div>${plano.exercicios.map(e => {
       const ok = feitos.includes(e.id);
       return `<div class="ex ${ok ? 'ok' : ''}">
-        <button class="chk" data-marcar="${e.id}" aria-pressed="${ok}" aria-label="${ok ? 'Desmarcar' : 'Marcar'} ${esc(e.nome)}">${ok ? '✓' : ''}</button>
+        ${editavel ? `<button class="chk" data-marcar="${e.id}" aria-pressed="${ok}" aria-label="${ok ? 'Desmarcar' : 'Marcar'} ${esc(e.nome)}">${ok ? '✓' : ''}</button>`
+          : `<span class="chk" aria-label="${ok ? 'Feito' : 'Não feito'}">${ok ? '✓' : ''}</span>`}
         <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div></div>`;
     }).join('')}</div></div>`;
 }
@@ -159,7 +175,11 @@ function telaHoje() {
   const pill = !total ? '<span class="pill ok">Descanso</span>'
     : feitos >= total ? '<span class="pill ok">Treino completo</span>'
     : feitos ? '<span class="pill wait">Em andamento</span>' : '<span class="pill wait">Ainda não começou</span>';
+  const pedidos = pedidosRecebidos();
   return `${cabecalho()}
+  ${pedidos.length ? `<section class="block"><div class="card stack aviso">
+    <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
+    <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
   <section class="block">
     <div class="grid3">
       <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}/${r.planejados}</b><span class="small muted">treinos</span></div>
@@ -230,12 +250,90 @@ function telaPerfil() {
       <button class="btn" type="submit">Salvar</button>
     </form>
   </section>
+  ${pedidosRecebidos().length ? `<section class="block"><span class="label">Pedidos para te acompanhar</span>
+    ${pedidosRecebidos().map(c => `<div class="card stack aviso">
+      <div><h3>${esc(nomeDe(c, 'viewer'))}</h3><p class="small muted">Quer ver seus treinos. Você escolhe o que mostrar depois de aceitar.</p></div>
+      <div class="row"><button class="btn ghost" data-recusar="${c.id}">Recusar</button><button class="btn" data-aceitar="${c.id}">Aceitar</button></div>
+    </div>`).join('')}</section>` : ''}
+  <section class="block"><span class="label">Quem te acompanha</span>
+    ${meusAcompanhantes().length ? meusAcompanhantes().map(c => `<div class="card stack">
+      <div class="row between"><h3 class="grow">${esc(nomeDe(c, 'viewer'))}</h3><span class="pill ok">Conectado</span></div>
+      ${[['treinos', 'Ver meus treinos e faltas'], ['checkins', 'Ver meus check-ins e fotos'], ['peso', 'Ver meu peso']].map(([k, t]) => `
+        <label class="row between" for="perm-${c.id}-${k}"><span>${t}</span>
+          <span class="switch"><input type="checkbox" id="perm-${c.id}-${k}" data-perm="${k}" data-con="${c.id}" ${c.perm?.[k] ? 'checked' : ''}><span></span></span></label>`).join('')}
+      <button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Tocar de novo para remover' : 'Remover'}</button>
+    </div>`).join('') : '<p class="small muted">Ninguém ainda. Passe o código abaixo para quem vai te incentivar.</p>'}
+  </section>
   <section class="block"><span class="label">Seu código de conexão</span>
     <div class="card stack"><div class="code">${esc(p.codigo || '—')}</div>
-      <p class="small muted">Em breve: passe esse código para quem vai te acompanhar. A pessoa vai ver seus treinos e check-ins, e você escolhe o que mostrar.</p>
+      <p class="small muted">A pessoa digita esse código na aba Acompanhar. Você recebe o pedido aqui e decide se aceita.</p>
       <button class="btn sm ghost" data-acao="copiar">Copiar código</button></div>
   </section>
   <section class="block"><button class="btn ghost" data-acao="sair">Sair da conta</button></section>`;
+}
+
+function formConectar() {
+  return `<form id="formConexao" class="stack">
+    <div class="field"><label class="label" for="codigoIn">Código da pessoa</label>
+      <input id="codigoIn" placeholder="FIT-AB12" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="10" required></div>
+    <p class="erro" id="conexaoErro" hidden></p>
+    <button class="btn" type="submit" id="conexaoBtn">Pedir para acompanhar</button>
+  </form>`;
+}
+
+function telaAcompanhar() {
+  const lista = quemAcompanho();
+  const aceitas = lista.filter(c => c.status === 'aceita');
+  const pendentes = lista.filter(c => c.status === 'pendente');
+  const atual = aceitas.find(c => c.id === S.acompId) || aceitas[0];
+  const aguardando = pendentes.map(c => `<div class="card row between"><div class="grow"><h3>Código ${esc(c.codigo)}</h3>
+    <p class="small muted">Esperando a pessoa aceitar</p></div><button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Confirmar' : 'Cancelar'}</button></div>`).join('');
+
+  if (!atual) {
+    return `<div class="top"><div class="grow"><span class="label">Acompanhar</span><h1>Treine junto</h1></div></div>
+    <section class="block"><p class="muted">Digite o código de quem você quer incentivar. Ele aparece na aba Perfil da pessoa.</p>${formConectar()}</section>
+    ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}`;
+  }
+
+  const nome = nomeDe(atual, 'atleta');
+  const A = S.acomp && S.acomp.chave === chaveAcomp(atual) ? S.acomp : null;
+  const semana = semanaAtual();
+  const hojeIso = isoDe(hoje());
+  let corpo;
+  if (!atual.perm?.treinos || A?.bloqueado) {
+    corpo = `<section class="block"><div class="card stack"><h3>Treinos privados</h3>
+      <p class="small muted">${esc(nome)} ainda não liberou ver os treinos. Quando liberar, eles aparecem aqui.</p></div></section>`;
+  } else if (!A?.carregado) {
+    corpo = '<section class="block"><p class="muted">Carregando…</p></section>';
+  } else {
+    const r = resumoSemana(A.plano, A.registros);
+    const d = hoje();
+    const planoHoje = A.plano[d.getDay()];
+    const total = planoHoje?.exercicios?.length || 0;
+    const feitos = A.registros[hojeIso]?.feitos?.length || 0;
+    const pill = !total ? (feitos ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
+      : feitos >= total ? '<span class="pill ok">Treino completo</span>'
+      : feitos ? '<span class="pill wait">Treinando agora</span>' : '<span class="pill wait">Ainda não treinou</span>';
+    corpo = `
+    <section class="block"><div class="row between"><span class="label">Hoje</span>${pill}</div>
+      ${cartaoTreino(d.getDay(), hojeIso, A.plano, A.registros, false)}</section>
+    <section class="block"><div class="row between"><span class="label">Semana</span><span class="small muted tabular">${r.feitos} de ${r.planejados} treinos</span></div>
+      <div class="week">${semana.map(x => `<div class="day ${statusDia(x, A.plano, A.registros)} ${isoDe(x) === hojeIso ? 'today' : ''}" aria-label="${DIAS_NOME[x.getDay()]}">
+        <span>${DIAS[x.getDay()]}</span><b class="tabular">${x.getDate()}</b><span class="dot"></span></div>`).join('')}</div>
+      ${legenda()}
+      <div class="grid3">
+        <div class="stat"><span class="label">Treinou</span><b class="tabular">${r.feitos}</b><span class="small muted">nesta semana</span></div>
+        <div class="stat"><span class="label">Faltou</span><b class="tabular">${r.faltas}</b><span class="small muted">nesta semana</span></div>
+        <div class="stat"><span class="label">Planejado</span><b class="tabular">${r.planejados}</b><span class="small muted">treinos</span></div>
+      </div></section>`;
+  }
+
+  return `<div class="top"><div class="grow"><span class="label">Acompanhando</span><h1>${esc(nome)}</h1></div></div>
+  ${aceitas.length > 1 ? `<div class="chips">${aceitas.map(c => `<button class="chip ${c.id === atual.id ? 'on' : ''}" data-acomp="${c.id}">${esc(nomeDe(c, 'atleta'))}</button>`).join('')}</div>` : ''}
+  ${corpo}
+  <section class="block"><span class="label">Acompanhar outra pessoa</span>${formConectar()}</section>
+  ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}
+  <section class="block"><button class="btn ghost" data-remover-con="${atual.id}">${S.confirmar === atual.id ? `Tocar de novo para parar de acompanhar ${esc(nome)}` : `Parar de acompanhar ${esc(nome)}`}</button></section>`;
 }
 
 function render() {
@@ -251,7 +349,8 @@ function render() {
   const foco = document.activeElement?.id;
   const rascunho = {};
   app.querySelectorAll('input[id]').forEach(i => { rascunho[i.id] = i.value; });
-  app.innerHTML = S.aba === 'semana' ? telaSemana() : S.aba === 'perfil' ? telaPerfil() : telaHoje();
+  app.innerHTML = S.aba === 'semana' ? telaSemana() : S.aba === 'perfil' ? telaPerfil()
+    : S.aba === 'acompanhar' ? telaAcompanhar() : telaHoje();
   for (const [id, valor] of Object.entries(rascunho)) {
     const el = document.getElementById(id);
     if (el) el.value = valor;
@@ -282,6 +381,36 @@ function comecarEscutas(user) {
     }, erro),
     Store.escutarPlano(user.uid, plano => { S.plano = plano; render(); }, erro),
     Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; render(); }, erro),
+    Store.escutarConexoes(user.uid, conexoes => {
+      S.conexoes = conexoes;
+      if (S.confirmar && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
+      sincronizarAcomp();
+      render();
+    }, erro),
+  );
+}
+
+// Escuta os treinos da pessoa que estou acompanhando. Refaz a escuta quando a
+// pessoa muda, aceita o pedido ou liga/desliga a permissão de ver os treinos.
+const chaveAcomp = c => `${c.id}:${c.status}:${!!c.perm?.treinos}`;
+function pararDeAcompanhar() { pararAcomp.forEach(f => f()); pararAcomp = []; }
+function sincronizarAcomp() {
+  const aceitas = quemAcompanho().filter(c => c.status === 'aceita');
+  const atual = aceitas.find(c => c.id === S.acompId) || aceitas[0];
+  const chave = atual?.perm?.treinos ? chaveAcomp(atual) : null;
+  if ((S.acomp?.chave ?? null) === chave) return;
+  pararDeAcompanhar();
+  if (!chave) { S.acomp = null; return; }
+  const alvo = S.acomp = { chave, plano: {}, registros: {}, temPlano: false, temRegistros: false, carregado: false, bloqueado: false };
+  const atualizar = () => { alvo.carregado = alvo.temPlano && alvo.temRegistros; if (S.acomp === alvo) render(); };
+  const falhou = err => {
+    if (err.code !== 'permission-denied') { console.error(err); toast(mensagemErro(err)); }
+    alvo.bloqueado = true; if (S.acomp === alvo) render();
+  };
+  const desde = isoDe(semanaAtual()[0]);
+  pararAcomp.push(
+    Store.escutarPlano(atual.atleta, plano => { alvo.plano = plano; alvo.temPlano = true; atualizar(); }, falhou),
+    Store.escutarRegistros(atual.atleta, desde, reg => { alvo.registros = reg; alvo.temRegistros = true; atualizar(); }, falhou),
   );
 }
 
@@ -289,6 +418,8 @@ if (Store.configurado) {
   Store.onAuthChange(user => {
     S.user = user;
     S.perfil = undefined; S.plano = {}; S.registros = {};
+    S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
+    pararDeAcompanhar();
     if (user) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
     S.aba = 'hoje';
     app.innerHTML = '';
@@ -310,6 +441,23 @@ document.addEventListener('click', e => {
   if (b.dataset.modo) { S.modoLogin = b.dataset.modo; render(); return; }
   if (b.dataset.dia !== undefined && !b.dataset.aba) { S.diaSel = +b.dataset.dia; app.innerHTML = ''; render(); return; }
   if (b.dataset.aba) { if (b.dataset.dia !== undefined) S.diaSel = +b.dataset.dia; irPara(b.dataset.aba); return; }
+
+  // Conexões
+  if (b.dataset.aceitar) {
+    salvar(Store.aceitarConexao(b.dataset.aceitar, S.perfil?.nome || ''), 'Pedido aceito. Escolha abaixo o que a pessoa pode ver.');
+    return;
+  }
+  if (b.dataset.recusar) { salvar(Store.removerConexao(b.dataset.recusar), 'Pedido recusado'); return; }
+  if (b.dataset.removerCon) {
+    const id = b.dataset.removerCon;
+    if (S.confirmar !== id) { S.confirmar = id; render(); return; } // primeiro toque só pede confirmação
+    S.confirmar = null;
+    if (S.acompId === id) S.acompId = null;
+    salvar(Store.removerConexao(id), 'Conexão removida');
+    return;
+  }
+  if (b.dataset.acomp) { S.acompId = b.dataset.acomp; sincronizarAcomp(); render(); return; }
+  if (S.confirmar) { S.confirmar = null; render(); } // tocar em outra coisa cancela a confirmação
 
   if (b.dataset.marcar) {
     const id = b.dataset.marcar, data = isoDe(hoje());
@@ -351,6 +499,13 @@ function mostrarErroLogin(texto) { const el = $('#loginErro'); if (el) { el.text
 
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.dataset.perm) {
+    const c = S.conexoes.find(x => x.id === t.dataset.con);
+    if (!c) return;
+    const perm = { treinos: false, checkins: false, peso: false, ...c.perm, [t.dataset.perm]: t.checked };
+    salvar(Store.salvarPermissoes(c.id, perm), t.checked ? 'Liberado' : 'Não aparece mais para essa pessoa');
+    return;
+  }
   if (t.id === 'titulo') {
     const p = planoDoDia(S.diaSel); p.titulo = t.value.trim();
     salvar(Store.salvarDia(uid(), S.diaSel, p), 'Nome do treino salvo');
@@ -400,6 +555,20 @@ document.addEventListener('submit', async e => {
     $('#exnome').value = ''; $('#excarga').value = '';
     await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício adicionado');
     $('#exnome')?.focus();
+  }
+
+  if (f.id === 'formConexao') {
+    $('#conexaoBtn').disabled = true; $('#conexaoErro').hidden = true;
+    try {
+      await Store.pedirConexao(uid(), S.perfil?.nome || '', $('#codigoIn').value);
+      if ($('#codigoIn')) $('#codigoIn').value = '';
+      toast('Pedido enviado. Agora é só a pessoa aceitar.');
+    } catch (err) {
+      const el = $('#conexaoErro'); // a tela pode ter sido redesenhada enquanto esperava
+      if (el) { el.textContent = mensagemErro(err); el.hidden = false; }
+    }
+    if ($('#conexaoBtn')) $('#conexaoBtn').disabled = false;
+    return;
   }
 
   if (f.id === 'formPerfil') {
