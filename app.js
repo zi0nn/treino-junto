@@ -59,10 +59,16 @@ const S = {
   conexoes: [],      // todas as conexões em que eu apareço (dos dois lados)
   acompId: null,     // id da conexão que estou vendo na aba Acompanhar
   acomp: null,       // { chave, plano, registros, carregado, bloqueado } da pessoa acompanhada
-  confirmar: null,   // id da conexão esperando o segundo toque em "Remover"
+  confirmar: null,   // id esperando o segundo toque (remover conexão, apagar check-in)
+  checkins: [],      // meus check-ins desta semana
+  fotos: {},         // fotos já carregadas: 'uid/idDoCheckin' → dataUrl | null | 'carregando'
+  mensagens: {},     // recados por conexão
+  checkin: { aberto: false, foto: null, processando: false, enviando: false },
 };
 let pararEscutas = [];
 let pararAcomp = [];
+let pararMsgs = {};  // escuta de recados por conexão
+const tentativasMsgs = {};
 let cadastrando = false;
 
 // ---------- Ícones ----------
@@ -88,23 +94,24 @@ const quemAcompanho = () => S.conexoes.filter(c => c.viewer === meuUid());
 const nomeDe = (c, lado) => (lado === 'atleta' ? c.atletaNome : c.viewerNome) || 'Alguém';
 
 // ---------- Regras do dia ----------
-function statusDia(d, planoSemana = S.plano, registros = S.registros) {
+// Treinou = marcou algum exercício OU fez check-in naquele dia
+function statusDia(d, planoSemana = S.plano, registros = S.registros, checkins = S.checkins) {
   const data = isoDe(d);
   const plano = planoSemana[d.getDay()];
   const temTreino = plano && plano.exercicios?.length;
   const feitos = registros[data]?.feitos?.length || 0;
-  if (feitos) return 'done';
+  if (feitos || checkins.some(c => c.data === data)) return 'done';
   if (!temTreino) return 'rest';
   const hojeIso = isoDe(hoje());
   if (data < hojeIso) return 'missed';
   return 'future';
 }
-function resumoSemana(planoSemana = S.plano, registros = S.registros) {
+function resumoSemana(planoSemana = S.plano, registros = S.registros, checkins = S.checkins) {
   const semana = semanaAtual();
   return {
-    feitos: semana.filter(d => statusDia(d, planoSemana, registros) === 'done').length,
+    feitos: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'done').length,
     planejados: semana.filter(d => planoSemana[d.getDay()]?.exercicios?.length).length,
-    faltas: semana.filter(d => statusDia(d, planoSemana, registros) === 'missed').length,
+    faltas: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'missed').length,
   };
 }
 
@@ -166,23 +173,125 @@ function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.registros,
 }
 const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga)].filter(Boolean).join(' · ');
 
+// ---------- Check-in ----------
+function fotoHtml(dono, c) {
+  if (!c.temFoto) return '';
+  const k = `${dono}/${c.id}`, v = S.fotos[k];
+  if (v === undefined) {
+    S.fotos[k] = 'carregando';
+    Store.lerFoto(dono, c.id).then(img => { S.fotos[k] = img; render(); }, () => { S.fotos[k] = null; render(); });
+  }
+  if (typeof v === 'string' && v.startsWith('data:')) return `<img class="foto" src="${v}" alt="Foto do check-in">`;
+  return `<div class="foto vazia">${v === null ? 'Foto indisponível' : 'Carregando foto…'}</div>`;
+}
+
+function quandoCheckin(c) {
+  const hojeIso = isoDe(hoje());
+  if (c.data === hojeIso) return `Hoje às ${esc(c.hora)}`;
+  const d = new Date(c.data + 'T12:00');
+  return `${DIAS_NOME[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} às ${esc(c.hora)}`;
+}
+
+// dono = uid de quem fez o check-in; podeReagir = estou vendo o check-in de outra pessoa
+function cartaoCheckin(dono, c, podeReagir) {
+  const reacoes = Object.entries(c.reacoes || {});
+  const minha = c.reacoes?.[meuUid()];
+  const nomeViewer = uid => nomeDe(S.conexoes.find(x => x.viewer === uid && x.atleta === meuUid()) || {}, 'viewer');
+  return `<div class="card stack">
+    <div class="row between"><h3 class="grow">Check-in · ${quandoCheckin(c)}</h3>
+      ${podeReagir ? '' : `<button class="link" data-apagar-ck="${c.id}">${S.confirmar === 'ck:' + c.id ? 'Confirmar' : 'Apagar'}</button>`}</div>
+    ${fotoHtml(dono, c)}
+    ${c.legenda ? `<p>${esc(c.legenda)}</p>` : ''}
+    ${podeReagir
+      ? `<div class="reacoes">${Store.REACOES.map(e => `<button class="${minha === e ? 'on' : ''}" data-reagir="${c.id}" data-emoji="${e}" aria-pressed="${minha === e}">${e}</button>`).join('')}</div>`
+      : reacoes.length ? `<div class="reacoes">${reacoes.map(([uid, e]) => `<span class="pill ok">${e} ${esc(nomeViewer(uid))}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function secaoCheckinHoje() {
+  const hojeIso = isoDe(hoje());
+  const feitosHoje = S.checkins.filter(c => c.data === hojeIso);
+  const ck = S.checkin;
+  if (ck.aberto) {
+    return `<section class="block"><span class="label">Check-in</span>
+      <div class="card stack">
+        <label class="drop" for="fotoIn">${ck.foto ? `<img class="foto" src="${ck.foto}" alt="Prévia da foto">`
+          : ck.processando ? '<b>Preparando a foto…</b>' : '<b>Tirar ou escolher foto</b><span class="small muted">Uma selfie no espelho da academia já vale</span>'}</label>
+        <input id="fotoIn" type="file" accept="image/*" hidden>
+        <div class="field"><label class="label" for="legendaIn">Legenda (opcional)</label><input id="legendaIn" maxlength="140" placeholder="Ex.: Hoje é dia de perna!"></div>
+        <div class="row"><button class="btn ghost" data-acao="cancelar-checkin">Cancelar</button>
+          <button class="btn" data-acao="enviar-checkin" ${ck.enviando || ck.processando ? 'disabled' : ''}>${ck.enviando ? 'Enviando…' : 'Enviar check-in'}</button></div>
+      </div></section>`;
+  }
+  if (feitosHoje.length) {
+    return `<section class="block"><span class="label">Check-in de hoje</span>${feitosHoje.map(c => cartaoCheckin(meuUid(), c, false)).join('')}</section>`;
+  }
+  return `<section class="block"><button class="btn grande" data-acao="abrir-checkin">Cheguei na academia · fazer check-in</button></section>`;
+}
+
+// Reduz a foto no próprio aparelho (lado maior até 1080 px) para caber no banco
+function prepararFoto(arquivo) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(arquivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let lado = 1080, qualidade = 0.75, dataUrl;
+      do {
+        const escala = Math.min(1, lado / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * escala); c.height = Math.round(img.height * escala);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        dataUrl = c.toDataURL('image/jpeg', qualidade);
+        lado = Math.round(lado * 0.8); qualidade = Math.max(0.5, qualidade - 0.1);
+      } while (dataUrl.length > 600000 && lado > 300);
+      resolve(dataUrl);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não foi possível abrir essa foto. Tente outra.')); };
+    img.src = url;
+  });
+}
+
+// ---------- Recados ----------
+function horaMsg(m) {
+  const d = m.criadoEm?.toDate ? m.criadoEm.toDate() : new Date();
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return isoDe(d) === isoDe(hoje()) ? hm : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hm}`;
+}
+
+function secaoRecados(c, outroNome, quantos, rapidos) {
+  const msgs = (S.mensagens[c.id] || []).slice(-quantos);
+  return `<section class="block"><span class="label">Recados com ${esc(outroNome)}</span>
+    ${msgs.length ? `<div class="conversa">${msgs.map(m => `<div class="msg ${m.de === meuUid() ? 'eu' : ''}">${esc(m.texto)}<span class="small muted">${horaMsg(m)}</span></div>`).join('')}</div>`
+      : '<p class="small muted">Nenhum recado ainda.</p>'}
+    <div class="rapidos">${rapidos.map(t => `<button data-rapido="${esc(t)}" data-con="${c.id}">${esc(t)}</button>`).join('')}</div>
+    <form class="row" data-recado="${c.id}">
+      <input id="recadoIn-${c.id}" class="input grow" maxlength="300" placeholder="Escreva um recado" autocomplete="off">
+      <button class="btn sm" type="submit">Enviar</button></form>
+  </section>`;
+}
+
 function telaHoje() {
   const d = hoje();
   const r = resumoSemana();
   const plano = S.plano[d.getDay()];
   const feitos = S.registros[isoDe(d)]?.feitos?.length || 0;
   const total = plano?.exercicios?.length || 0;
+  const fezCheckin = S.checkins.some(c => c.data === isoDe(d));
   const pill = !total ? '<span class="pill ok">Descanso</span>'
     : feitos >= total ? '<span class="pill ok">Treino completo</span>'
-    : feitos ? '<span class="pill wait">Em andamento</span>' : '<span class="pill wait">Ainda não começou</span>';
+    : feitos ? '<span class="pill wait">Em andamento</span>'
+    : fezCheckin ? '<span class="pill ok">Na academia</span>' : '<span class="pill wait">Ainda não começou</span>';
   const pedidos = pedidosRecebidos();
   return `${cabecalho()}
   ${pedidos.length ? `<section class="block"><div class="card stack aviso">
     <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
     <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
+  ${secaoCheckinHoje()}
+  ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}
   <section class="block">
     <div class="grid3">
-      <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}/${r.planejados}</b><span class="small muted">treinos</span></div>
+      <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}</b><span class="small muted">${r.planejados ? `de ${r.planejados} treinos` : (r.feitos === 1 ? 'treino' : 'treinos')}</span></div>
       <div class="stat"><span class="label">Hoje</span><b class="tabular">${feitos}/${total}</b><span class="small muted">exercícios</span></div>
       <div class="stat"><span class="label">Meta</span><b class="tabular">${S.perfil?.metaPeso ?? '—'}</b><span class="small muted">kg</span></div>
     </div>
@@ -299,26 +408,47 @@ function telaAcompanhar() {
   const A = S.acomp && S.acomp.chave === chaveAcomp(atual) ? S.acomp : null;
   const semana = semanaAtual();
   const hojeIso = isoDe(hoje());
+  const verCheckins = atual.perm?.checkins && A && !A.bloqCheckins;
+  const checkins = verCheckins ? A.checkins : [];
+
+  // Check-ins: o de hoje com reações, ou o último que ela fez
+  let secaoCheckins = '';
+  if (!atual.perm?.checkins || A?.bloqCheckins) {
+    secaoCheckins = `<section class="block"><div class="card stack"><h3>Check-ins privados</h3>
+      <p class="small muted">${esc(nome)} ainda não liberou ver os check-ins e fotos.</p></div></section>`;
+  } else if (!A?.temCheckins) {
+    secaoCheckins = '<section class="block"><p class="muted">Carregando check-ins…</p></section>';
+  } else {
+    const deHoje = checkins.filter(c => c.data === hojeIso);
+    secaoCheckins = deHoje.length
+      ? `<section class="block"><span class="label">Check-in de hoje</span>${deHoje.map(c => cartaoCheckin(atual.atleta, c, true)).join('')}</section>`
+      : `<section class="block"><span class="label">Check-in de hoje</span><div class="card stack"><h3>Ainda não fez check-in hoje</h3>
+          <p class="small muted">Que tal mandar um recado de incentivo aí embaixo?</p></div>
+          ${checkins[0] ? `<span class="label">Último check-in</span>${cartaoCheckin(atual.atleta, checkins[0], true)}` : ''}</section>`;
+  }
+
   let corpo;
-  if (!atual.perm?.treinos || A?.bloqueado) {
+  if (!atual.perm?.treinos || A?.bloqTreinos) {
     corpo = `<section class="block"><div class="card stack"><h3>Treinos privados</h3>
       <p class="small muted">${esc(nome)} ainda não liberou ver os treinos. Quando liberar, eles aparecem aqui.</p></div></section>`;
-  } else if (!A?.carregado) {
+  } else if (!(A?.temPlano && A?.temRegistros)) {
     corpo = '<section class="block"><p class="muted">Carregando…</p></section>';
   } else {
-    const r = resumoSemana(A.plano, A.registros);
+    const r = resumoSemana(A.plano, A.registros, checkins);
     const d = hoje();
     const planoHoje = A.plano[d.getDay()];
     const total = planoHoje?.exercicios?.length || 0;
     const feitos = A.registros[hojeIso]?.feitos?.length || 0;
-    const pill = !total ? (feitos ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
+    const fezCheckin = checkins.some(c => c.data === hojeIso);
+    const pill = !total ? (feitos || fezCheckin ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
       : feitos >= total ? '<span class="pill ok">Treino completo</span>'
-      : feitos ? '<span class="pill wait">Treinando agora</span>' : '<span class="pill wait">Ainda não treinou</span>';
+      : feitos ? '<span class="pill wait">Treinando agora</span>'
+      : fezCheckin ? '<span class="pill ok">Na academia</span>' : '<span class="pill wait">Ainda não treinou</span>';
     corpo = `
-    <section class="block"><div class="row between"><span class="label">Hoje</span>${pill}</div>
+    <section class="block"><div class="row between"><span class="label">Treino de hoje</span>${pill}</div>
       ${cartaoTreino(d.getDay(), hojeIso, A.plano, A.registros, false)}</section>
-    <section class="block"><div class="row between"><span class="label">Semana</span><span class="small muted tabular">${r.feitos} de ${r.planejados} treinos</span></div>
-      <div class="week">${semana.map(x => `<div class="day ${statusDia(x, A.plano, A.registros)} ${isoDe(x) === hojeIso ? 'today' : ''}" aria-label="${DIAS_NOME[x.getDay()]}">
+    <section class="block"><div class="row between"><span class="label">Semana</span><span class="small muted tabular">${r.planejados ? `${r.feitos} de ${r.planejados} treinos` : `${r.feitos} ${r.feitos === 1 ? 'treino' : 'treinos'}`}</span></div>
+      <div class="week">${semana.map(x => `<div class="day ${statusDia(x, A.plano, A.registros, checkins)} ${isoDe(x) === hojeIso ? 'today' : ''}" aria-label="${DIAS_NOME[x.getDay()]}">
         <span>${DIAS[x.getDay()]}</span><b class="tabular">${x.getDate()}</b><span class="dot"></span></div>`).join('')}</div>
       ${legenda()}
       <div class="grid3">
@@ -330,6 +460,8 @@ function telaAcompanhar() {
 
   return `<div class="top"><div class="grow"><span class="label">Acompanhando</span><h1>${esc(nome)}</h1></div></div>
   ${aceitas.length > 1 ? `<div class="chips">${aceitas.map(c => `<button class="chip ${c.id === atual.id ? 'on' : ''}" data-acomp="${c.id}">${esc(nomeDe(c, 'atleta'))}</button>`).join('')}</div>` : ''}
+  ${secaoCheckins}
+  ${secaoRecados(atual, nome, 10, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])}
   ${corpo}
   <section class="block"><span class="label">Acompanhar outra pessoa</span>${formConectar()}</section>
   ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}
@@ -348,7 +480,7 @@ function render() {
   // Mantém o que estava sendo digitado quando os dados mudam no banco
   const foco = document.activeElement?.id;
   const rascunho = {};
-  app.querySelectorAll('input[id]').forEach(i => { rascunho[i.id] = i.value; });
+  app.querySelectorAll('input[id]:not([type=file]):not([type=checkbox])').forEach(i => { rascunho[i.id] = i.value; });
   app.innerHTML = S.aba === 'semana' ? telaSemana() : S.aba === 'perfil' ? telaPerfil()
     : S.aba === 'acompanhar' ? telaAcompanhar() : telaHoje();
   for (const [id, valor] of Object.entries(rascunho)) {
@@ -381,45 +513,79 @@ function comecarEscutas(user) {
     }, erro),
     Store.escutarPlano(user.uid, plano => { S.plano = plano; render(); }, erro),
     Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; render(); }, erro),
+    Store.escutarCheckins(user.uid, desde, lista => { S.checkins = lista; render(); }, erro),
     Store.escutarConexoes(user.uid, conexoes => {
       S.conexoes = conexoes;
-      if (S.confirmar && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
+      if (S.confirmar && !S.confirmar.startsWith('ck:') && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
       sincronizarAcomp();
+      sincronizarMensagens();
       render();
     }, erro),
   );
 }
 
-// Escuta os treinos da pessoa que estou acompanhando. Refaz a escuta quando a
-// pessoa muda, aceita o pedido ou liga/desliga a permissão de ver os treinos.
-const chaveAcomp = c => `${c.id}:${c.status}:${!!c.perm?.treinos}`;
+// Escuta os dados da pessoa que estou acompanhando. Refaz a escuta quando a pessoa
+// muda, aceita o pedido ou liga/desliga as permissões de treinos e check-ins.
+const chaveAcomp = c => `${c.id}:${c.status}:${!!c.perm?.treinos}:${!!c.perm?.checkins}`;
 function pararDeAcompanhar() { pararAcomp.forEach(f => f()); pararAcomp = []; }
-function sincronizarAcomp() {
+function acompAtual() {
   const aceitas = quemAcompanho().filter(c => c.status === 'aceita');
-  const atual = aceitas.find(c => c.id === S.acompId) || aceitas[0];
-  const chave = atual?.perm?.treinos ? chaveAcomp(atual) : null;
+  return aceitas.find(c => c.id === S.acompId) || aceitas[0];
+}
+function sincronizarAcomp() {
+  const atual = acompAtual();
+  const chave = atual && (atual.perm?.treinos || atual.perm?.checkins) ? chaveAcomp(atual) : null;
   if ((S.acomp?.chave ?? null) === chave) return;
   pararDeAcompanhar();
   if (!chave) { S.acomp = null; return; }
-  const alvo = S.acomp = { chave, plano: {}, registros: {}, temPlano: false, temRegistros: false, carregado: false, bloqueado: false };
-  const atualizar = () => { alvo.carregado = alvo.temPlano && alvo.temRegistros; if (S.acomp === alvo) render(); };
-  const falhou = err => {
+  const alvo = S.acomp = {
+    chave, plano: {}, registros: {}, checkins: [],
+    temPlano: false, temRegistros: false, temCheckins: false, bloqTreinos: false, bloqCheckins: false,
+  };
+  const atualizar = () => { if (S.acomp === alvo) render(); };
+  const falhou = campo => err => {
     if (err.code !== 'permission-denied') { console.error(err); toast(mensagemErro(err)); }
-    alvo.bloqueado = true; if (S.acomp === alvo) render();
+    alvo[campo] = true; atualizar();
   };
   const desde = isoDe(semanaAtual()[0]);
-  pararAcomp.push(
-    Store.escutarPlano(atual.atleta, plano => { alvo.plano = plano; alvo.temPlano = true; atualizar(); }, falhou),
-    Store.escutarRegistros(atual.atleta, desde, reg => { alvo.registros = reg; alvo.temRegistros = true; atualizar(); }, falhou),
+  if (atual.perm?.treinos) pararAcomp.push(
+    Store.escutarPlano(atual.atleta, plano => { alvo.plano = plano; alvo.temPlano = true; atualizar(); }, falhou('bloqTreinos')),
+    Store.escutarRegistros(atual.atleta, desde, reg => { alvo.registros = reg; alvo.temRegistros = true; atualizar(); }, falhou('bloqTreinos')),
+  );
+  // Check-ins: semana atual e a anterior, para mostrar o último mesmo numa segunda-feira
+  const duasSemanas = new Date(semanaAtual()[0]); duasSemanas.setDate(duasSemanas.getDate() - 7);
+  if (atual.perm?.checkins) pararAcomp.push(
+    Store.escutarCheckins(atual.atleta, isoDe(duasSemanas), lista => { alvo.checkins = lista; alvo.temCheckins = true; atualizar(); }, falhou('bloqCheckins')),
   );
 }
+
+// Uma escuta de recados para cada conexão aceita
+function sincronizarMensagens() {
+  const ids = new Set(S.conexoes.filter(c => c.status === 'aceita').map(c => c.id));
+  for (const id of Object.keys(pararMsgs)) {
+    if (!ids.has(id)) { pararMsgs[id](); delete pararMsgs[id]; delete S.mensagens[id]; }
+  }
+  for (const id of ids) {
+    if (pararMsgs[id]) continue;
+    pararMsgs[id] = Store.escutarMensagens(id, msgs => { S.mensagens[id] = msgs; render(); }, err => {
+      // Logo depois de aceitar, o banco pode ainda não ter liberado: tenta de novo em instantes
+      console.warn('Recados indisponíveis', err);
+      tentativasMsgs[id] = (tentativasMsgs[id] || 0) + 1;
+      if (tentativasMsgs[id] > 5) return; // desiste: provavelmente as regras não foram publicadas
+      delete pararMsgs[id];
+      setTimeout(() => { if (S.user) sincronizarMensagens(); }, 3000);
+    });
+  }
+}
+function pararMensagens() { Object.values(pararMsgs).forEach(f => f()); pararMsgs = {}; S.mensagens = {}; }
 
 if (Store.configurado) {
   Store.onAuthChange(user => {
     S.user = user;
-    S.perfil = undefined; S.plano = {}; S.registros = {};
+    S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {};
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
-    pararDeAcompanhar();
+    S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
+    pararDeAcompanhar(); pararMensagens();
     if (user) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
     S.aba = 'hoje';
     app.innerHTML = '';
@@ -457,7 +623,25 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.dataset.acomp) { S.acompId = b.dataset.acomp; sincronizarAcomp(); render(); return; }
+
+  // Check-ins e recados
+  if (b.dataset.apagarCk) {
+    const chave = 'ck:' + b.dataset.apagarCk;
+    if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
+    S.confirmar = null;
+    salvar(Store.apagarCheckin(uid(), b.dataset.apagarCk), 'Check-in apagado');
+    return;
+  }
   if (S.confirmar) { S.confirmar = null; render(); } // tocar em outra coisa cancela a confirmação
+  if (b.dataset.reagir) {
+    const atual = acompAtual();
+    const ck = S.acomp?.checkins.find(c => c.id === b.dataset.reagir);
+    if (!atual || !ck) return;
+    const emoji = ck.reacoes?.[uid()] === b.dataset.emoji ? null : b.dataset.emoji;
+    salvar(Store.reagir(atual.atleta, ck.id, uid(), emoji));
+    return;
+  }
+  if (b.dataset.rapido) { salvar(Store.enviarMensagem(b.dataset.con, uid(), b.dataset.rapido), 'Recado enviado'); return; }
 
   if (b.dataset.marcar) {
     const id = b.dataset.marcar, data = isoDe(hoje());
@@ -482,6 +666,9 @@ document.addEventListener('click', e => {
   }
 
   const acao = b.dataset.acao;
+  if (acao === 'abrir-checkin') { S.checkin = { aberto: true, foto: null, processando: false, enviando: false }; render(); return; }
+  if (acao === 'cancelar-checkin') { S.checkin.aberto = false; S.checkin.foto = null; render(); return; }
+  if (acao === 'enviar-checkin') { enviarCheckin(); return; }
   if (acao === 'sair') salvar(Store.sair());
   if (acao === 'copiar') {
     const c = S.perfil?.codigo;
@@ -495,10 +682,36 @@ document.addEventListener('click', e => {
   }
 });
 
+async function enviarCheckin() {
+  const ck = S.checkin;
+  if (ck.enviando || ck.processando) return;
+  ck.enviando = true; render();
+  const agora = new Date();
+  try {
+    const id = await Store.criarCheckin(uid(), {
+      data: isoDe(agora), hora: `${pad(agora.getHours())}:${pad(agora.getMinutes())}`, legenda: $('#legendaIn')?.value.trim() || '',
+    }, ck.foto);
+    if (ck.foto) S.fotos[`${uid()}/${id}`] = ck.foto; // já mostra a foto sem baixar de novo
+    S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
+    render();
+    toast('Check-in feito! Quem te acompanha vai ver 💪');
+  } catch (err) {
+    console.error(err);
+    ck.enviando = false; render();
+    toast(mensagemErro(err));
+  }
+}
+
 function mostrarErroLogin(texto) { const el = $('#loginErro'); if (el) { el.textContent = texto; el.hidden = false; } }
 
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'fotoIn' && t.files?.[0]) {
+    S.checkin.processando = true; S.checkin.foto = null; render();
+    prepararFoto(t.files[0]).then(foto => { S.checkin.foto = foto; }, err => toast(err.message))
+      .finally(() => { S.checkin.processando = false; render(); });
+    return;
+  }
   if (t.dataset.perm) {
     const c = S.conexoes.find(x => x.id === t.dataset.con);
     if (!c) return;
@@ -555,6 +768,15 @@ document.addEventListener('submit', async e => {
     $('#exnome').value = ''; $('#excarga').value = '';
     await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício adicionado');
     $('#exnome')?.focus();
+  }
+
+  if (f.dataset.recado) {
+    const input = document.getElementById(`recadoIn-${f.dataset.recado}`);
+    const texto = input?.value.trim();
+    if (!texto) return;
+    input.value = '';
+    await salvar(Store.enviarMensagem(f.dataset.recado, uid(), texto));
+    return;
   }
 
   if (f.id === 'formConexao') {

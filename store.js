@@ -8,6 +8,10 @@
                                     dia = 0 (domingo) a 6 (sábado)
      users/{uid}/registros/{data} → { feitos: [ids dos exercícios], atualizadoEm }
                                     data = 'AAAA-MM-DD'
+     users/{uid}/checkins/{id}    → { data, hora, legenda, temFoto, criadoEm, reacoes: { uidDeQuemReagiu: emoji } }
+     users/{uid}/fotos/{id}       → { img }   foto do check-in (JPEG reduzido, em texto). Fica separada
+                                    para a lista de check-ins carregar rápido e a foto só quando aparece.
+     conexoes/{id}/mensagens/{id} → { de, texto, criadoEm }   recados entre as duas pessoas conectadas
      codigos/{codigo}             → { uid }   código de conexão
      conexoes/{atleta}_{viewer}   → { atleta, viewer, codigo, atletaNome, viewerNome, status, perm, criadoEm }
                                     atleta = quem treina; viewer = quem acompanha
@@ -22,8 +26,9 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, query, where, documentId, onSnapshot, getDoc,
-  setDoc, updateDoc, deleteDoc, runTransaction, serverTimestamp, arrayUnion, arrayRemove,
+  collection, doc, query, where, documentId, onSnapshot, getDoc, orderBy, limit,
+  setDoc, updateDoc, deleteDoc, addDoc, writeBatch, deleteField,
+  runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -166,6 +171,57 @@ export function escutarConexoes(uid, callback, onError) {
 export const aceitarConexao = (id, meuNome) => updateDoc(doc(db, 'conexoes', id), { status: 'aceita', atletaNome: meuNome });
 export const salvarPermissoes = (id, perm) => updateDoc(doc(db, 'conexoes', id), { perm });
 export const removerConexao = id => deleteDoc(doc(db, 'conexoes', id));
+
+// ---------- Check-ins ----------
+
+export const REACOES = ['💪', '🔥', '❤️', '👏'];
+
+// Salva o check-in e a foto juntos: ou os dois entram, ou nenhum
+export async function criarCheckin(uid, { data, hora, legenda }, foto) {
+  const ref = doc(collection(db, 'users', uid, 'checkins'));
+  const batch = writeBatch(db);
+  batch.set(ref, { data, hora, legenda: String(legenda || '').slice(0, 140), temFoto: !!foto, criadoEm: serverTimestamp(), reacoes: {} });
+  if (foto) batch.set(doc(db, 'users', uid, 'fotos', ref.id), { img: foto });
+  await batch.commit();
+  return ref.id;
+}
+
+export function escutarCheckins(uid, desde, callback, onError) {
+  const q = query(collection(db, 'users', uid, 'checkins'), where('data', '>=', desde));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    lista.sort((a, b) => (b.data + b.hora).localeCompare(a.data + a.hora));
+    callback(lista);
+  }, onError);
+}
+
+export async function lerFoto(uid, id) {
+  const snap = await getDoc(doc(db, 'users', uid, 'fotos', id));
+  return snap.exists() ? snap.data().img : null;
+}
+
+export async function apagarCheckin(uid, id) {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'users', uid, 'checkins', id));
+  batch.delete(doc(db, 'users', uid, 'fotos', id));
+  await batch.commit();
+}
+
+// Cada pessoa tem no máximo uma reação por check-in; tocar na mesma de novo tira
+export const reagir = (donoUid, checkinId, meuUid, emoji) =>
+  updateDoc(doc(db, 'users', donoUid, 'checkins', checkinId), { [`reacoes.${meuUid}`]: emoji || deleteField() });
+
+// ---------- Recados ----------
+
+export function escutarMensagens(conexaoId, callback, onError) {
+  const q = query(collection(db, 'conexoes', conexaoId, 'mensagens'), orderBy('criadoEm', 'desc'), limit(30));
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) })).reverse());
+  }, onError);
+}
+
+export const enviarMensagem = (conexaoId, meuUid, texto) =>
+  addDoc(collection(db, 'conexoes', conexaoId, 'mensagens'), { de: meuUid, texto: String(texto).slice(0, 300), criadoEm: serverTimestamp() });
 
 export const marcarExercicio = (uid, data, exId, feito) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {
