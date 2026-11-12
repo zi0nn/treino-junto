@@ -63,6 +63,10 @@ p { margin: 0; }
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-width: 0;
 }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 380px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+.editar-ex { padding: 12px 0; border-top: 1px solid var(--line); }
+.editar-ex:first-child { border-top: 0; }
 .erro { color: var(--hot); font-size: 13px; font-weight: 500; }
 
 /* Login */
@@ -103,6 +107,40 @@ p { margin: 0; }
 .pill.ok { background: var(--accent-soft); color: var(--accent); }
 .pill.wait { background: var(--warn-soft); color: var(--warn); }
 .pill.bad { background: var(--hot-soft); color: var(--hot); }
+.pill:not(.ok):not(.wait):not(.bad) { background: var(--line); color: var(--muted); }
+
+/* Histórico */
+.mes-titulo { text-align: center; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-dow { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+.cal-dia { aspect-ratio: 1; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 0; min-width: 0; }
+.cal-dia.done { background: var(--accent); border-color: transparent; color: var(--surface); }
+.cal-dia.missed { background: var(--hot-soft); border-color: transparent; color: var(--hot); }
+.cal-dia.rest { color: var(--muted); }
+.cal-dia.today { box-shadow: inset 0 0 0 2px var(--ink); }
+.cal-dia.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lista { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Séries e cronômetro de descanso */
+.ex-acoes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.mini { border: 0; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 700; background: var(--accent); color: var(--surface); }
+.mini.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.timer {
+  position: fixed; left: 0; right: 0; z-index: 6; background: var(--ink); color: var(--bg);
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 8px; box-shadow: 0 -4px 16px rgb(0 0 0 / .2);
+}
+.timer > * { max-width: 408px; width: 100%; margin: 0 auto; }
+.timer-in { display: flex; align-items: center; gap: 8px; }
+.timer-in .small { display: block; opacity: .8; }
+.timer-tempo { font-family: var(--display); font-size: 30px; font-weight: 800; line-height: 1.1; }
+.timer .mini.ghost { color: var(--bg); border-color: color-mix(in srgb, var(--bg) 35%, transparent); }
+.timer .bar { background: color-mix(in srgb, var(--bg) 25%, transparent); height: 6px; }
+.timer-padrao { color: var(--bg); text-decoration: underline; text-align: left; }
+/* Com o cronômetro na tela, o conteúdo e os avisos sobem para não ficarem escondidos */
+body:has(#timer:not([hidden])) .app { padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px)); }
+body:has(#timer:not([hidden])) .toast { bottom: calc(180px + env(safe-area-inset-bottom, 0px)); }
 
 /* Carga ao lado do exercício */
 .carga { display: flex; align-items: center; gap: 4px; flex: none; }
@@ -197,6 +235,14 @@ label.row { cursor: pointer; padding-block: 4px; }
 .dica { margin-top: 6px; }
 
 .code { font-family: var(--display); font-size: 30px; font-weight: 800; letter-spacing: .08em; }
+
+/* Subabas (logo abaixo do título) */
+.subnav { display: flex; gap: 4px; margin-top: 12px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; scrollbar-width: none; }
+.subnav::-webkit-scrollbar { display: none; }
+.subnav button { flex: 1 0 auto; border: 0; background: transparent; padding: 9px 12px; border-radius: 9px; font-weight: 700; font-size: 13px; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.subnav button.on { background: var(--accent-soft); color: var(--accent); }
+.badge-in { min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; background: var(--hot); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.atalho { width: 100%; text-align: left; font-weight: 600; gap: 12px; cursor: pointer; }
 
 /* Navegação */
 nav.tabs {

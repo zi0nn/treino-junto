@@ -28,7 +28,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, sendPasswordResetEmail, updateProfile,
+  signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -65,7 +65,21 @@ const normalizarEmail = email => email.trim().toLowerCase();
 // ---------- Login ----------
 
 export function onAuthChange(callback) {
-  return onAuthStateChanged(auth, user => callback(user ? { uid: user.uid, email: user.email, nome: user.displayName } : null));
+  return onAuthStateChanged(auth, user => callback(user
+    ? { uid: user.uid, email: user.email, nome: user.displayName, verificado: user.emailVerified } : null));
+}
+
+// ---------- Confirmação do e-mail ----------
+// A conta só funciona depois que a pessoa toca no link que chega no e-mail.
+export const reenviarVerificacao = () => sendEmailVerification(auth.currentUser);
+
+// Confere de novo no Firebase se o e-mail já foi confirmado (e atualiza o login para as regras do banco)
+export async function conferirVerificacao() {
+  const u = auth.currentUser;
+  if (!u) return false;
+  await u.reload();
+  if (u.emailVerified) await u.getIdToken(true);
+  return u.emailVerified;
 }
 
 export const entrar = (email, senha) => signInWithEmailAndPassword(auth, normalizarEmail(email), senha);
@@ -76,6 +90,7 @@ export async function criarConta(nome, email, senha) {
   const { user } = await createUserWithEmailAndPassword(auth, normalizarEmail(email), senha);
   await updateProfile(user, { displayName: nome });
   await criarPerfil(user.uid, nome, user.email);
+  try { await sendEmailVerification(user); } catch (err) { console.warn('E-mail de confirmação não enviado', err); }
   return user;
 }
 

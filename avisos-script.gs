@@ -57,7 +57,7 @@ function loginDe(idToken) {
   });
   if (r.getResponseCode() !== 200) return null;
   const usuario = (JSON.parse(r.getContentText()).users || [])[0];
-  return usuario ? usuario.localId : null;
+  return usuario && usuario.emailVerified ? usuario.localId : null; // só contas com e-mail confirmado
 }
 
 function responder(objeto) {
@@ -76,7 +76,7 @@ function avisarCheckin(atleta, checkinId) {
     .forEach(c => {
       if (!querAviso(c.viewer, 'checkin')) return;
       notificar(c.viewer, nome + ' fez check-in! 💪', ck.legenda || 'Chegou na academia às ' + ck.hora + '.',
-        SITE_URL + '#acompanhar', 'checkin-' + atleta);
+        SITE_URL + '#mural', 'checkin-' + atleta);
     });
 }
 
@@ -89,7 +89,7 @@ function avisarReacao(viewer, atleta, checkinId) {
   if (!emoji || REACOES.indexOf(emoji) < 0) return; // a reação precisa estar mesmo salva
   if (!querAviso(atleta, 'reacoes')) return;
   notificar(atleta, nomeDe(viewer) + ' reagiu ' + emoji, 'ao seu check-in de ' + (ck.data === hojeISO() ? 'hoje' : dataBR(ck.data)),
-    SITE_URL, 'reacao-' + checkinId);
+    SITE_URL + '#mural', 'reacao-' + checkinId);
 }
 
 // Recado novo → avisa a outra pessoa da conexão
@@ -100,7 +100,7 @@ function avisarRecado(remetente, conexaoId, texto) {
   const destino = c.atleta === remetente ? c.viewer : c.atleta;
   if (!querAviso(destino, 'recados')) return;
   notificar(destino, 'Recado de ' + nomeDe(remetente), texto.slice(0, 140),
-    SITE_URL + (destino === c.viewer ? '#acompanhar' : ''), 'recado-' + conexaoId);
+    SITE_URL + '#recados', 'recado-' + conexaoId);
 }
 
 // Conquista nova → avisa quem acompanha (só se ela foi mesmo registrada hoje no perfil)
@@ -125,7 +125,7 @@ function avisarMetaBatida(atleta, conexaoId) {
   if (!querAviso(c.viewer, 'conquistas')) return;
   notificar(c.viewer, '🎉 ' + nomeDe(atleta) + ' bateu a meta do mês!',
     c.meta.treinos + ' treinos' + (c.meta.recompensa ? '. Recompensa: ' + c.meta.recompensa : '') + '. Hora de cumprir! 😄',
-    SITE_URL + '#acompanhar', 'meta-' + conexaoId);
+    SITE_URL + '#mural', 'meta-' + conexaoId);
 }
 
 // Dias com treino (exercício marcado ou check-in) num mês 'AAAA-MM'

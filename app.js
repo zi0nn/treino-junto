@@ -53,7 +53,8 @@ const S = {
   perfil: undefined,
   plano: {},
   registros: {},
-  aba: 'hoje',
+  aba: 'treino',
+  sub: { treino: 'hoje', corpo: 'peso', juntos: 'mural', evolucao: 'conquistas', perfil: 'dados' },
   diaSel: hoje().getDay(),
   modoLogin: 'entrar',
   conexoes: [],      // todas as conexões em que eu apareço (dos dois lados)
@@ -78,20 +79,60 @@ let pararMsgs = {};  // escuta de recados por conexão
 const tentativasMsgs = {};
 let cadastrando = false;
 
-// ---------- Ícones ----------
+// ---------- Navegação: 5 abas, cada uma com subabas ----------
 const ICONE = {
-  hoje: '<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>',
-  semana: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  treino: '<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>',
+  corpo: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="4"/><path d="M8 9a4 4 0 0 1 8 0"/><path d="M12 9l1.5-2"/></svg>',
+  juntos: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11.5h.01M12 11.5h.01M15 11.5h.01"/></svg>',
+  evolucao: '<svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
   perfil: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
-  acompanhar: '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
-  progresso: '<svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
 };
-const ABAS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['progresso', 'Progresso'], ['acompanhar', 'Acompanhar'], ['perfil', 'Perfil']];
+const ABAS = [
+  ['treino', 'Treino', [['hoje', 'Hoje'], ['semana', 'Semana'], ['historico', 'Histórico']]],
+  ['corpo', 'Corpo', [['peso', 'Peso e IMC'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]],
+  ['juntos', 'Juntos', [['mural', 'Check-in'], ['recados', 'Recados'], ['acompanhar', 'Acompanhar']]],
+  ['evolucao', 'Evolução', [['conquistas', 'Conquistas'], ['frequencia', 'Frequência'], ['cargas', 'Cargas']]],
+  ['perfil', 'Perfil', [['dados', 'Dados'], ['conexoes', 'Conexões'], ['avisos', 'Avisos']]],
+];
+// Endereço (#nome) → [aba, subaba]. Também aceita os nomes antigos usados nos avisos.
+const ROTAS = { progresso: ['evolucao', 'conquistas'], checkin: ['juntos', 'mural'] };
+ABAS.forEach(([aba, , subs]) => { ROTAS[aba] = [aba, null]; subs.forEach(([s]) => { ROTAS[s] = [aba, s]; }); });
+
+// Recados que chegaram e eu ainda não abri (por conexão)
+function recadosNovos() {
+  let lidos = {};
+  try { lidos = JSON.parse(localStorage.getItem('recados-lidos') || '{}'); } catch { /* sem armazenamento */ }
+  return Object.entries(S.mensagens).reduce((n, [id, msgs]) => {
+    const ult = msgs.at(-1);
+    const quando = ult?.criadoEm?.toMillis?.() || 0;
+    return n + (ult && ult.de !== meuUid() && quando > (lidos[id] || 0) ? 1 : 0);
+  }, 0);
+}
+function marcarRecadosLidos() {
+  const lidos = {};
+  Object.entries(S.mensagens).forEach(([id, msgs]) => { lidos[id] = msgs.at(-1)?.criadoEm?.toMillis?.() || Date.now(); });
+  try { localStorage.setItem('recados-lidos', JSON.stringify(lidos)); } catch { /* sem armazenamento */ }
+}
+
+const contagens = () => ({ conexoes: pedidosRecebidos().length, recados: recadosNovos() });
+const BADGE_DA_ABA = { perfil: 'conexoes', juntos: 'recados' };
 
 function mostrarNav(visivel) {
   $('#nav').hidden = !visivel;
-  const pedidos = pedidosRecebidos().length;
-  if (visivel) $('#navin').innerHTML = ABAS.map(([k, l]) => `<button class="${S.aba === k ? 'on' : ''}" data-aba="${k}">${ICONE[k]}${l}${k === 'perfil' && pedidos ? ` <span class="badge">${pedidos}</span>` : ''}</button>`).join('');
+  if (!visivel) return;
+  const n = contagens();
+  $('#navin').innerHTML = ABAS.map(([k, l]) => {
+    const qtd = n[BADGE_DA_ABA[k]] || 0;
+    return `<button class="${S.aba === k ? 'on' : ''}" data-aba="${k}" aria-label="${l}${qtd ? `, ${qtd} novidade(s)` : ''}">${ICONE[k]}${l}${qtd ? `<span class="badge">${qtd}</span>` : ''}</button>`;
+  }).join('');
+}
+
+// Subabas logo abaixo do título
+function subnav() {
+  const subs = ABAS.find(a => a[0] === S.aba)[2];
+  const n = contagens();
+  return `<div class="subnav" role="tablist">${subs.map(([k, l]) => `<button role="tab" aria-selected="${S.sub[S.aba] === k}"
+    class="${S.sub[S.aba] === k ? 'on' : ''}" data-aba="${k}">${l}${n[k] ? `<span class="badge-in">${n[k]}</span>` : ''}</button>`).join('')}</div>`;
 }
 
 // ---------- Conexões ----------
@@ -157,11 +198,13 @@ function telaLogin() {
   </form>`;
 }
 
+// Título da tela + subabas. Na tela Hoje o título é o "Oi, fulano".
 function cabecalho() {
   const d = hoje();
   const nome = S.perfil?.nome || S.user?.nome || '';
+  const titulo = S.aba === 'treino' && S.sub.treino === 'hoje' ? `Oi, ${esc(nome.split(' ')[0])}` : ABAS.find(a => a[0] === S.aba)[1];
   return `<div class="top"><div class="grow"><span class="label">${DIAS_NOME[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
-    <h1>Oi, ${esc(nome.split(' ')[0])}</h1></div></div>`;
+    <h1>${titulo}</h1></div></div>${subnav()}`;
 }
 
 function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.registros, editavel = true) {
@@ -181,11 +224,180 @@ function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.registros,
       return `<div class="ex ${ok ? 'ok' : ''}">
         ${editavel ? `<button class="chk" data-marcar="${e.id}" aria-pressed="${ok}" aria-label="${ok ? 'Desmarcar' : 'Marcar'} ${esc(e.nome)}">${ok ? '✓' : ''}</button>`
           : `<span class="chk" aria-label="${ok ? 'Feito' : 'Não feito'}">${ok ? '✓' : ''}</span>`}
-        <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div>
+        <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div>
+          ${editavel && data === isoDe(hoje()) ? controlesSerie(e, ok) : ''}</div>
         ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : registros[data]?.cargas?.[e.id] ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
     }).join('')}</div></div>`;
 }
-const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga)].filter(Boolean).join(' · ');
+const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
+
+// ---------- Descanso entre séries ----------
+const DESCANSOS = [30, 45, 60, 75, 90, 120, 150, 180, 240];
+const descansoDe = e => Number.isFinite(e?.descanso) ? e.descanso : 60;
+const tempoBR = s => `${Math.floor(s / 60)}:${pad(Math.max(0, s) % 60)}`;
+const opcoesDescanso = atual => DESCANSOS.map(s => `<option value="${s}" ${s === atual ? 'selected' : ''}>${tempoBR(s)}</option>`).join('');
+
+// ---------- Séries e cronômetro de descanso ----------
+// Séries feitas hoje ficam só neste aparelho (não precisam ir para o banco)
+const chaveSeries = () => `series-${meuUid()}-${isoDe(hoje())}`;
+function seriesFeitas() {
+  try { return JSON.parse(localStorage.getItem(chaveSeries()) || '{}'); } catch { return S.seriesMem || (S.seriesMem = {}); }
+}
+function guardarSeries(obj) {
+  S.seriesMem = obj;
+  try { localStorage.setItem(chaveSeries(), JSON.stringify(obj)); } catch { /* fica só na memória */ }
+}
+
+function controlesSerie(e, ok) {
+  const total = e.series || 1;
+  const feitas = Math.min(seriesFeitas()[e.id] || 0, total);
+  if (ok) return '<div class="ex-acoes"><span class="small muted">Séries completas ✓</span></div>';
+  return `<div class="ex-acoes">
+    <button class="mini" data-serie="${e.id}" aria-label="Marcar série ${feitas + 1} de ${total} de ${esc(e.nome)} e descansar">✓ Série ${feitas + 1}/${total}</button>
+    <button class="mini ghost" data-descansar="${e.id}" aria-label="Só descansar ${tempoBR(descansoDe(e))}">⏱ ${tempoBR(descansoDe(e))}</button>
+  </div>`;
+}
+
+const T = { fim: 0, total: 0, exId: null, nome: '', ajuste: 0, intervalo: null, audio: null };
+
+function exercicioDeHoje(id) {
+  return S.plano[hoje().getDay()]?.exercicios?.find(x => x.id === id);
+}
+
+function iniciarDescanso(e) {
+  const segundos = descansoDe(e);
+  Object.assign(T, { fim: Date.now() + segundos * 1000, total: segundos, exId: e.id, nome: e.nome, ajuste: 0 });
+  // O som só pode tocar depois de um toque: prepara agora, aproveitando este toque
+  try { T.audio ||= new (window.AudioContext || window.webkitAudioContext)(); T.audio.resume?.(); } catch { /* sem som */ }
+  // Tela acesa durante o descanso (quando o aparelho deixa)
+  navigator.wakeLock?.request('screen').then(w => { T.wake = w; }, () => {});
+  clearInterval(T.intervalo);
+  T.intervalo = setInterval(atualizarTimer, 250);
+  atualizarTimer();
+}
+
+function pararDescanso() {
+  clearInterval(T.intervalo); T.intervalo = null; T.fim = 0;
+  try { T.wake?.release(); } catch { /* ok */ }
+  T.wake = null;
+  const el = $('#timer'); if (el) el.hidden = true;
+}
+
+function ajustarDescanso(seg) {
+  if (!T.fim) return;
+  T.fim = Math.max(Date.now() + 5000, T.fim + seg * 1000);
+  T.total = Math.max(5, T.total + seg);
+  T.ajuste += seg;
+  atualizarTimer();
+}
+
+function bip() {
+  const ctx = T.audio; if (!ctx) return;
+  [0, 0.25, 0.5].forEach(t => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.15);
+  });
+}
+
+function atualizarTimer() {
+  let el = $('#timer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'timer'; el.className = 'timer'; el.setAttribute('role', 'timer');
+    document.body.appendChild(el);
+  }
+  if (!T.fim) { el.hidden = true; return; }
+  const resta = Math.ceil((T.fim - Date.now()) / 1000);
+  if (resta <= 0) {
+    clearInterval(T.intervalo); T.intervalo = null; T.fim = 0;
+    try { T.wake?.release(); } catch { /* ok */ }
+    navigator.vibrate?.([250, 120, 250]);
+    bip();
+    el.hidden = false;
+    el.innerHTML = `<div class="timer-in"><b>⏰ Descanso acabou!</b><span class="small">Próxima série de ${esc(T.nome)}</span>
+      <button class="mini" data-timer="fechar">OK</button></div>`;
+    if (document.hidden && permissao() === 'granted') {
+      navigator.serviceWorker?.ready.then(r => r.showNotification('Descanso acabou! ⏰', { body: `Próxima série de ${T.nome}`, tag: 'descanso' })).catch(() => {});
+    }
+    setTimeout(() => { if (!T.fim) el.hidden = true; }, 6000);
+    return;
+  }
+  const pct = Math.min(100, Math.max(0, 100 * (1 - resta / T.total)));
+  const ex = exercicioDeHoje(T.exId);
+  const novoPadrao = T.ajuste && ex ? descansoDe(ex) + T.ajuste : null;
+  el.hidden = false;
+  el.innerHTML = `<div class="timer-in">
+      <div class="grow"><span class="small">Descanso · ${esc(T.nome)}</span><b class="timer-tempo tabular">${tempoBR(resta)}</b></div>
+      <button class="mini ghost" data-timer="-15" aria-label="Menos 15 segundos">−15</button>
+      <button class="mini ghost" data-timer="15" aria-label="Mais 15 segundos">+15</button>
+      <button class="mini ghost" data-timer="fechar" aria-label="Parar descanso">✕</button>
+    </div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    ${novoPadrao && novoPadrao >= 15 && novoPadrao <= 600 ? `<button class="link timer-padrao" data-timer="padrao">Usar ${tempoBR(novoPadrao)} como descanso padrão de ${esc(T.nome)}</button>` : ''}`;
+}
+
+// Marca uma série; na última, o exercício conta como feito
+function marcarSerie(id) {
+  const e = exercicioDeHoje(id);
+  if (!e) return;
+  const series = seriesFeitas();
+  const total = e.series || 1;
+  series[id] = Math.min(total, (series[id] || 0) + 1);
+  guardarSeries(series);
+  const data = isoDe(hoje());
+  if (series[id] >= total) {
+    pararDescanso();
+    if (!(S.registros[data]?.feitos || []).includes(id)) salvar(Store.marcarExercicio(uid(), data, id, true));
+    toast(`${e.nome}: séries completas! 💪`);
+  } else {
+    iniciarDescanso(e);
+  }
+  render();
+}
+
+// Guarda o tempo ajustado no cronômetro como o novo padrão do exercício
+function salvarDescansoPadrao() {
+  const dia = hoje().getDay();
+  const p = structuredClone(S.plano[dia]);
+  const e = p?.exercicios?.find(x => x.id === T.exId);
+  if (!e) return;
+  e.descanso = Math.min(600, Math.max(15, descansoDe(e) + T.ajuste));
+  T.ajuste = 0;
+  salvar(Store.salvarDia(uid(), dia, p), `Descanso de ${e.nome}: ${tempoBR(e.descanso)}`);
+  atualizarTimer();
+}
+
+// ---------- Modelos de treino prontos ----------
+const ex = (nome, series, reps, carga, descanso) => ({ nome, series, reps, carga, descanso });
+const MODELOS = [
+  {
+    id: 'abc', nome: 'Iniciante ABC', desc: '3 dias por semana: pernas, parte de cima e cardio com abdômen.',
+    dias: {
+      1: ['Treino A · Inferiores', [ex('Agachamento livre', 3, '12', '', 90), ex('Leg press 45°', 3, '12', '', 90), ex('Cadeira extensora', 3, '15', '', 60), ex('Cadeira flexora', 3, '15', '', 60), ex('Elevação pélvica', 3, '12', '', 60)]],
+      3: ['Treino B · Superiores', [ex('Puxada frontal', 3, '12', '', 75), ex('Remada baixa', 3, '12', '', 75), ex('Supino reto', 3, '12', '', 75), ex('Desenvolvimento com halter', 3, '10', '', 60), ex('Tríceps corda', 3, '15', '', 45)]],
+      5: ['Treino C · Cardio e abdômen', [ex('Esteira', 1, '25 min', '', 60), ex('Prancha', 3, '30 s', '', 45), ex('Abdominal infra', 3, '15', '', 45), ex('Bicicleta', 1, '15 min', '', 60)]],
+    },
+  },
+  {
+    id: 'emagrecer', nome: 'Emagrecimento 4x', desc: 'Musculação com cardio no fim, 4 dias por semana.',
+    dias: {
+      1: ['Pernas + cardio', [ex('Agachamento livre', 4, '12', '', 75), ex('Leg press 45°', 4, '12', '', 75), ex('Stiff', 3, '12', '', 60), ex('Abdutora', 3, '15', '', 45), ex('Esteira', 1, '20 min', '', 60)]],
+      2: ['Superiores + cardio', [ex('Puxada frontal', 4, '12', '', 60), ex('Supino reto', 3, '12', '', 60), ex('Remada baixa', 3, '12', '', 60), ex('Elevação lateral', 3, '15', '', 45), ex('Elíptico', 1, '20 min', '', 60)]],
+      4: ['Glúteos + abdômen', [ex('Elevação pélvica', 4, '12', '', 75), ex('Agachamento livre', 3, '15', '', 60), ex('Abdutora', 3, '15', '', 45), ex('Prancha', 3, '40 s', '', 45), ex('Abdominal infra', 3, '15', '', 45)]],
+      5: ['Corpo todo + cardio', [ex('Leg press 45°', 3, '15', '', 60), ex('Puxada frontal', 3, '12', '', 60), ex('Desenvolvimento com halter', 3, '12', '', 60), ex('Escada', 1, '15 min', '', 60)]],
+    },
+  },
+  {
+    id: 'fullbody', nome: 'Corpo todo 3x', desc: 'O mesmo treino completo segunda, quarta e sexta. Bom para pouco tempo.',
+    dias: Object.fromEntries([1, 3, 5].map(d => [d, ['Corpo todo', [ex('Agachamento livre', 3, '12', '', 90), ex('Supino reto', 3, '12', '', 75), ex('Puxada frontal', 3, '12', '', 75), ex('Elevação pélvica', 3, '12', '', 60), ex('Prancha', 3, '30 s', '', 45)]]])),
+  },
+  {
+    id: 'cardio', nome: 'Cardio e abdômen', desc: '3 dias leves, para começar ou para dias corridos.',
+    dias: Object.fromEntries([2, 4, 6].map(d => [d, ['Cardio e abdômen', [ex('Esteira', 1, '30 min', '', 60), ex('Prancha', 3, '30 s', '', 45), ex('Abdominal infra', 3, '15', '', 45)]]])),
+  },
+];
 
 // ---------- Check-in ----------
 function fotoHtml(dono, c) {
@@ -292,34 +504,37 @@ function telaHoje() {
   const feitos = S.registros[isoDe(d)]?.feitos?.length || 0;
   const total = plano?.exercicios?.length || 0;
   const fezCheckin = S.checkins.some(c => c.data === isoDe(d));
-  const pill = !total ? '<span class="pill ok">Descanso</span>'
+  const pill = !total ? (feitos || fezCheckin ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
     : feitos >= total ? '<span class="pill ok">Treino completo</span>'
     : feitos ? '<span class="pill wait">Em andamento</span>'
     : fezCheckin ? '<span class="pill ok">Na academia</span>' : '<span class="pill wait">Ainda não começou</span>';
   const pedidos = pedidosRecebidos();
   const seq = sequencias(S.plano, S.registros, S.checkins);
+  const ckHoje = S.checkins.find(c => c.data === isoDe(d));
+  const novos = recadosNovos();
   return `${cabecalho()}
   ${pedidos.length ? `<section class="block"><div class="card stack aviso">
     <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
-    <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
-  ${secaoCheckinHoje()}
+    <button class="btn sm" data-aba="conexoes">Ver pedido</button></div></section>` : ''}
+  ${novos ? `<section class="block"><button class="card row atalho" data-aba="recados">💬 <span class="grow">${novos === 1 ? 'Você tem um recado novo' : `Você tem ${novos} recados novos`}</span><span class="link">Ler</span></button></section>` : ''}
+  <section class="block">${ckHoje
+    ? `<button class="card row atalho" data-aba="mural">✅ <span class="grow">Check-in feito às ${esc(ckHoje.hora)}</span><span class="link">Ver</span></button>`
+    : '<button class="btn grande" data-acao="abrir-checkin">📍 Cheguei na academia · fazer check-in</button>'}</section>
   <section class="block">
     <div class="row between"><span class="label">Treino de hoje</span>${pill}</div>
     ${cartaoTreino(d.getDay(), isoDe(d))}
   </section>
   ${Object.keys(S.plano).length ? '' : `<section class="block"><div class="card stack"><h3>Comece montando sua semana</h3>
-    <p class="muted small">Na aba Semana você escolhe os exercícios de cada dia. Depois é só marcar aqui o que já fez.</p>
+    <p class="muted small">Em Semana você monta os exercícios de cada dia, ou escolhe um modelo pronto. Depois é só marcar aqui o que já fez.</p>
     <button class="btn" data-aba="semana">Montar minha semana</button></div></section>`}
   <section class="block">
     <div class="grid3">
       <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}</b><span class="small muted">${r.planejados ? `de ${r.planejados} ${r.planejados === 1 ? 'treino' : 'treinos'}` : (r.feitos === 1 ? 'treino' : 'treinos')}</span></div>
-      <div class="stat"><span class="label">Hoje</span><b class="tabular">${feitos}/${total}</b><span class="small muted">exercícios</span></div>
+      <div class="stat"><span class="label">Hoje</span><b class="tabular">${total ? `${Math.min(feitos, total)}/${total}` : feitos || '—'}</b><span class="small muted">${total || feitos ? 'exercícios' : 'descanso'}</span></div>
       <div class="stat"><span class="label">Sequência</span><b class="tabular">🔥 ${seq.atual}</b><span class="small muted">${seq.atual === 1 ? 'treino seguido' : 'seguidos'}</span></div>
     </div>
   </section>
-  ${convitAvisos()}
-  ${meusAcompanhantes().map(c => cartaoMetaCasal(c, 'atleta', treinosNoMes(S.registros, S.checkins))).join('')}
-  ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}`;
+  ${convitAvisos()}`;
 }
 
 function legenda() {
@@ -342,8 +557,9 @@ function telaSemana() {
     <h2>${DIAS_NOME[dia]}</h2>
     <div class="field"><label class="label" for="titulo">Nome do treino</label>
       <input id="titulo" maxlength="60" value="${esc(plano.titulo)}" placeholder="Ex.: Treino A · Inferiores"></div>
-    <div class="card">${plano.exercicios.length ? plano.exercicios.map((e, i) => `<div class="ex">
+    <div class="card">${plano.exercicios.length ? plano.exercicios.map((e, i) => S.editandoEx === e.id ? formEditarEx(e) : `<div class="ex">
         <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div>
+        <button class="icone" data-editar-ex="${e.id}" aria-label="Editar ${esc(e.nome)}">✎</button>
         <button class="icone" data-subir="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(e.nome)}">↑</button>
         <button class="icone" data-remover="${e.id}" aria-label="Remover ${esc(e.nome)}">×</button></div>`).join('')
       : '<p class="muted small">Nenhum exercício. Sem exercícios, o dia conta como descanso.</p>'}</div>
@@ -353,19 +569,115 @@ function telaSemana() {
       <div class="field"><label class="label" for="exnome">Exercício</label>
         <input id="exnome" list="sugestoes" placeholder="Ex.: Supino reto" required maxlength="60">
         <datalist id="sugestoes">${SUGESTOES.map(s => `<option value="${esc(s)}"></option>`).join('')}</datalist></div>
-      <div class="grid3">
+      <div class="grid4">
         <div class="field"><label class="label" for="exseries">Séries</label><input id="exseries" type="number" inputmode="numeric" min="1" max="20" value="3"></div>
         <div class="field"><label class="label" for="exreps">Reps</label><input id="exreps" value="12" maxlength="12"></div>
         <div class="field"><label class="label" for="excarga">Carga</label><input id="excarga" placeholder="20 kg" maxlength="16"></div>
+        <div class="field"><label class="label" for="exdescanso">Descanso</label><select id="exdescanso" class="input">${opcoesDescanso(60)}</select></div>
       </div>
       <button class="btn" type="submit">Adicionar em ${DIAS_NOME[dia].toLowerCase()}</button>
     </form>
     ${plano.exercicios.length ? `<div class="row"><span class="small muted grow">Copiar este treino para outro dia:</span>
       <select id="copiarPara" class="input" style="width:auto"><option value="">Escolher dia</option>${[1, 2, 3, 4, 5, 6, 0].filter(x => x !== dia).map(x => `<option value="${x}">${DIAS_NOME[x]}</option>`).join('')}</select></div>` : ''}
+  </section>
+  ${secaoModelos()}`;
+}
+
+// Edição de um exercício do plano, no lugar da linha dele
+function formEditarEx(e) {
+  return `<form class="stack editar-ex" data-editar-form="${e.id}">
+    <div class="field"><label class="label" for="edNome">Exercício</label><input id="edNome" list="sugestoes" maxlength="60" value="${esc(e.nome)}" required></div>
+    <div class="grid4">
+      <div class="field"><label class="label" for="edSeries">Séries</label><input id="edSeries" type="number" inputmode="numeric" min="1" max="20" value="${e.series || 1}"></div>
+      <div class="field"><label class="label" for="edReps">Reps</label><input id="edReps" maxlength="12" value="${esc(e.reps || '')}"></div>
+      <div class="field"><label class="label" for="edCarga">Carga</label><input id="edCarga" maxlength="16" value="${esc(e.carga || '')}"></div>
+      <div class="field"><label class="label" for="edDescanso">Descanso</label><select id="edDescanso" class="input">${opcoesDescanso(descansoDe(e))}</select></div>
+    </div>
+    <div class="row"><button class="btn ghost" type="button" data-cancelar-ex>Cancelar</button><button class="btn" type="submit">Salvar</button></div>
+  </form>`;
+}
+
+function secaoModelos() {
+  if (!S.verModelos) {
+    return `<section class="block"><button class="btn ghost" data-ver-modelos>📋 Usar um modelo de treino pronto</button></section>`;
+  }
+  return `<section class="block"><div class="row between"><span class="label">Modelos prontos</span><button class="link" data-ver-modelos>Fechar</button></div>
+    <p class="small muted">Monta a semana inteira de uma vez. Depois dá para editar qualquer exercício. <b>Substitui o treino que já está montado.</b></p>
+    ${MODELOS.map(m => `<div class="card stack">
+      <div><h3>${esc(m.nome)}</h3><p class="small muted">${esc(m.desc)}</p>
+        <p class="small tabular">${[1, 2, 3, 4, 5, 6, 0].filter(d => m.dias[d]).map(d => `${DIAS[d]}: ${esc(m.dias[d][0])}`).join(' · ')}</p></div>
+      <button class="btn sm ${S.confirmar === 'modelo:' + m.id ? '' : 'ghost'}" data-usar-modelo="${m.id}">${S.confirmar === 'modelo:' + m.id ? 'Tocar de novo para substituir minha semana' : 'Usar este'}</button>
+    </div>`).join('')}
   </section>`;
 }
 
-function telaPerfil() {
+// ---------- Histórico (calendário do mês) ----------
+function telaHistorico() {
+  const hojeIso = isoDe(hoje());
+  const mes = S.mesHist || hojeIso.slice(0, 7);
+  const [ano, m] = mes.split('-').map(Number);
+  const primeiro = new Date(ano, m - 1, 1, 12);
+  const diasNoMes = new Date(ano, m, 0).getDate();
+  const vazios = (primeiro.getDay() + 6) % 7; // semana começa na segunda
+  const sel = S.diaHist && S.diaHist.startsWith(mes) ? S.diaHist : (hojeIso.startsWith(mes) ? hojeIso : null);
+  const dias = Array.from({ length: diasNoMes }, (_, i) => new Date(ano, m - 1, i + 1, 12));
+  const st = dias.map(d => statusDia(d));
+  const treinou = st.filter(s => s === 'done').length;
+  const faltou = st.filter(s => s === 'missed').length;
+  const checkinsMes = S.checkins.filter(c => c.data.startsWith(mes)).length;
+  const tituloBruto = primeiro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const titulo = tituloBruto.charAt(0).toUpperCase() + tituloBruto.slice(1);
+  return `${cabecalho()}
+  <section class="block">
+    <div class="row between"><button class="icone" data-mes="-1" aria-label="Mês anterior">‹</button>
+      <h2 class="mes-titulo">${titulo}</h2>
+      <button class="icone" data-mes="1" aria-label="Próximo mês" ${mes >= hojeIso.slice(0, 7) ? 'disabled' : ''}>›</button></div>
+    <div class="cal">
+      ${['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map(l => `<span class="cal-dow">${l}</span>`).join('')}
+      ${'<span></span>'.repeat(vazios)}
+      ${dias.map((d, i) => {
+        const iso = isoDe(d);
+        return `<button class="cal-dia ${st[i]} ${iso === hojeIso ? 'today' : ''} ${iso === sel ? 'sel' : ''}" data-dia-hist="${iso}"
+          aria-label="${d.getDate()} de ${titulo}: ${({ done: 'treinou', missed: 'faltou', rest: 'descanso', future: 'planejado' })[st[i]]}">${d.getDate()}</button>`;
+      }).join('')}
+    </div>
+    ${legenda()}
+    <div class="grid3">
+      <div class="stat"><span class="label">Treinou</span><b class="tabular">${treinou}</b><span class="small muted">${treinou === 1 ? 'dia' : 'dias'}</span></div>
+      <div class="stat"><span class="label">Faltou</span><b class="tabular">${faltou}</b><span class="small muted">${faltou === 1 ? 'dia' : 'dias'}</span></div>
+      <div class="stat"><span class="label">Check-ins</span><b class="tabular">${checkinsMes}</b><span class="small muted">no mês</span></div>
+    </div>
+  </section>
+  ${sel ? detalheDia(sel) : '<section class="block"><p class="small muted">Toque num dia para ver o que foi feito.</p></section>'}`;
+}
+
+// O que aconteceu num dia: exercícios, cargas, check-in e peso
+function detalheDia(iso) {
+  const d = diaDe(iso);
+  const status = statusDia(d);
+  const reg = S.registros[iso] || {};
+  const plano = S.plano[d.getDay()];
+  const nomes = (reg.feitos || []).map(id => plano?.exercicios?.find(x => x.id === id)?.nome || reg.cargas?.[id]?.nome || null);
+  const conhecidos = nomes.filter(Boolean);
+  const outros = nomes.length - conhecidos.length;
+  const cargas = Object.values(reg.cargas || {}).filter(c => c?.nome);
+  const checkins = S.checkins.filter(c => c.data === iso);
+  const peso = S.pesos.find(p => p.data === iso);
+  const pill = { done: '<span class="pill ok">Treinou</span>', missed: '<span class="pill bad">Faltou</span>', rest: '<span class="pill">Descanso</span>', future: '<span class="pill wait">Planejado</span>' }[status];
+  const titulo = `${DIAS_NOME[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}`;
+  return `<section class="block"><div class="row between"><h2 class="grow">${titulo}</h2>${pill}</div>
+    ${nomes.length ? `<div class="card stack"><span class="label">Exercícios feitos</span>
+      <ul class="lista">${conhecidos.map(n => `<li>${esc(n)}</li>`).join('')}${outros ? `<li class="muted">${outros === 1 ? 'mais 1 exercício' : `mais ${outros} exercícios`} (já tirado do plano)</li>` : ''}</ul></div>` : ''}
+    ${cargas.length ? `<div class="card stack"><span class="label">Cargas</span>
+      ${cargas.map(c => `<div class="row between"><span>${esc(c.nome)}</span><b class="tabular">${kgBR(c.kg)} kg</b></div>`).join('')}</div>` : ''}
+    ${peso ? `<div class="card row between"><span>Peso registrado</span><b class="tabular">${kgBR(peso.kg)} kg</b></div>` : ''}
+    ${checkins.map(c => cartaoCheckin(meuUid(), c, false)).join('')}
+    ${!nomes.length && !checkins.length && !peso ? `<p class="small muted">${status === 'missed' ? 'Tinha treino planejado e nada foi marcado.' : status === 'future' ? 'Ainda não chegou.' : 'Nada registrado neste dia.'}</p>` : ''}
+  </section>`;
+}
+
+// ---------- Perfil ----------
+function telaDados() {
   const p = S.perfil || {};
   return `${cabecalho()}
   <section class="block"><span class="label">Seus dados</span>
@@ -377,6 +689,17 @@ function telaPerfil() {
       <button class="btn" type="submit">Salvar</button>
     </form>
   </section>
+  <section class="block"><button class="btn ghost" data-acao="sair">Sair da conta</button></section>`;
+}
+
+function telaAvisos() {
+  return `${cabecalho()}${secaoAvisos()}`;
+}
+
+function telaConexoes() {
+  const p = S.perfil || {};
+  const acompanho = quemAcompanho();
+  return `${cabecalho()}
   ${pedidosRecebidos().length ? `<section class="block"><span class="label">Pedidos para te acompanhar</span>
     ${pedidosRecebidos().map(c => `<div class="card stack aviso">
       <div><h3>${esc(nomeDe(c, 'viewer'))}</h3><p class="small muted">Quer ver seus treinos. Você escolhe o que mostrar depois de aceitar.</p></div>
@@ -389,15 +712,22 @@ function telaPerfil() {
         <label class="row between" for="perm-${c.id}-${k}"><span>${t}</span>
           <span class="switch"><input type="checkbox" id="perm-${c.id}-${k}" data-perm="${k}" data-con="${c.id}" ${c.perm?.[k] ? 'checked' : ''}><span></span></span></label>`).join('')}
       <button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Tocar de novo para remover' : 'Remover'}</button>
-    </div>`).join('') : '<p class="small muted">Ninguém ainda. Passe o código abaixo para quem vai te incentivar.</p>'}
+    </div>`).join('') : '<p class="small muted">Ninguém ainda. Passe o seu código (logo abaixo) para quem vai te incentivar.</p>'}
   </section>
-  ${secaoAvisos()}
   <section class="block"><span class="label">Seu código de conexão</span>
     <div class="card stack"><div class="code">${esc(p.codigo || '—')}</div>
-      <p class="small muted">A pessoa digita esse código na aba Acompanhar. Você recebe o pedido aqui e decide se aceita.</p>
+      <p class="small muted">A pessoa digita esse código aqui em Conexões, no app dela. Você recebe o pedido e decide se aceita.</p>
       <button class="btn sm ghost" data-acao="copiar">Copiar código</button></div>
   </section>
-  <section class="block"><button class="btn ghost" data-acao="sair">Sair da conta</button></section>`;
+  <section class="block"><span class="label">Quem você acompanha</span>
+    ${acompanho.length ? acompanho.map(c => `<div class="card row between">
+      <div class="grow"><h3>${c.status === 'aceita' ? esc(nomeDe(c, 'atleta')) : `Código ${esc(c.codigo)}`}</h3>
+        <p class="small muted">${c.status === 'aceita' ? 'Conectado' : 'Esperando a pessoa aceitar'}</p></div>
+      <button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Confirmar' : c.status === 'aceita' ? 'Parar' : 'Cancelar'}</button></div>`).join('')
+      : '<p class="small muted">Você ainda não acompanha ninguém.</p>'}
+    <span class="label">Acompanhar alguém</span>
+    ${formConectar()}
+  </section>`;
 }
 
 // ---------- Avisos no celular ----------
@@ -816,7 +1146,7 @@ function cartaoImc(pesos, alturaCm, proprio, meta) {
   if (!pesos.length) return '';
   if (!alturaCm) {
     return proprio ? `<div class="card stack"><h3>Veja seu IMC</h3><p class="small muted">Coloque sua altura no Perfil para ver o IMC e a faixa de peso saudável.</p>
-      <button class="btn sm ghost" data-aba="perfil">Colocar altura</button></div>` : '';
+      <button class="btn sm ghost" data-aba="dados">Colocar altura</button></div>` : '';
   }
   const kg = pesos.at(-1).kg, imc = calcImc(kg, alturaCm), faixa = faixaImc(imc);
   const [min, max] = faixaSaudavel(alturaCm);
@@ -939,17 +1269,11 @@ function resumoPesoAcomp(pesos) {
   </div>`;
 }
 
-function telaProgresso() {
+// ---------- Corpo ----------
+function telaPeso() {
   const meta = S.perfil?.metaPeso || null;
-  const semanas = semanasFrequencia(S.plano, S.registros, S.checkins);
-  const media = semanas.length ? semanas.reduce((a, s) => a + s.feitos, 0) / semanas.length : 0;
   const recentes = S.pesos.slice(-5).reverse();
-  const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil?.alturaCm);
-  const qtd = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id] || q.ok(ctx)).length;
   return `${cabecalho()}
-  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
-  <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
-    ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>
   <section class="block"><span class="label">Peso</span>
     ${resumoPeso(S.pesos, meta)}
     ${cartaoImc(S.pesos, S.perfil?.alturaCm, true, meta)}
@@ -964,16 +1288,39 @@ function telaProgresso() {
     </form>
     ${recentes.length ? `<div class="card">${recentes.map(p => `<div class="ex"><div class="grow tabular"><b>${kgBR(p.kg)} kg</b> <span class="small muted">${dataCurta(p.data)}</span></div>
       <button class="link" data-apagar-peso="${p.data}">${S.confirmar === 'peso:' + p.data ? 'Confirmar' : 'Apagar'}</button></div>`).join('')}</div>` : ''}
-    <p class="small muted">Quem te acompanha só vê seu peso e IMC se você ligar "Ver meu peso" no Perfil.</p>
-  </section>
-  ${secaoMedidas()}
-  ${secaoCargas()}
-  ${secaoFotosProgresso()}
+    <p class="small muted">Quem te acompanha só vê seu peso e IMC se você ligar "Ver meu peso" em Perfil › Conexões.</p>
+  </section>`;
+}
+const telaMedidas = () => cabecalho() + secaoMedidas();
+const telaFotos = () => cabecalho() + secaoFotosProgresso();
+
+// ---------- Evolução ----------
+function telaConquistas() {
+  const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil?.alturaCm);
+  const qtd = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id] || q.ok(ctx)).length;
+  return `${cabecalho()}
+  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
+  <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
+    ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>`;
+}
+
+function telaFrequencia() {
+  const semanas = semanasFrequencia(S.plano, S.registros, S.checkins);
+  const media = semanas.length ? semanas.reduce((a, s) => a + s.feitos, 0) / semanas.length : 0;
+  const r = resumoSemana();
+  return `${cabecalho()}
+  <section class="block"><span class="label">Esta semana</span>
+    <div class="grid3">
+      <div class="stat"><span class="label">Treinou</span><b class="tabular">${r.feitos}</b><span class="small muted">${r.feitos === 1 ? 'dia' : 'dias'}</span></div>
+      <div class="stat"><span class="label">Faltou</span><b class="tabular">${r.faltas}</b><span class="small muted">${r.faltas === 1 ? 'dia' : 'dias'}</span></div>
+      <div class="stat"><span class="label">Planejado</span><b class="tabular">${r.planejados}</b><span class="small muted">${r.planejados === 1 ? 'treino' : 'treinos'}</span></div>
+    </div></section>
   <section class="block"><div class="row between"><span class="label">Treinos por semana</span>
     ${semanas.length ? `<span class="small muted tabular">média ${media.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por semana</span>` : ''}</div>
     <div class="card">${graficoFrequencia('minhaFreq', semanas)}</div>
   </section>`;
 }
+const telaCargas = () => cabecalho() + secaoCargas();
 
 function formConectar() {
   return `<form id="formConexao" class="stack">
@@ -984,42 +1331,67 @@ function formConectar() {
   </form>`;
 }
 
-function telaAcompanhar() {
-  const lista = quemAcompanho();
-  const aceitas = lista.filter(c => c.status === 'aceita');
-  const pendentes = lista.filter(c => c.status === 'pendente');
+// ---------- Juntos ----------
+// Quem eu acompanho (aceitas) e qual está selecionada; dados dela já carregados em S.acomp
+function contextoAcomp() {
+  const aceitas = quemAcompanho().filter(c => c.status === 'aceita');
   const atual = aceitas.find(c => c.id === S.acompId) || aceitas[0];
-  const aguardando = pendentes.map(c => `<div class="card row between"><div class="grow"><h3>Código ${esc(c.codigo)}</h3>
-    <p class="small muted">Esperando a pessoa aceitar</p></div><button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Confirmar' : 'Cancelar'}</button></div>`).join('');
-
-  if (!atual) {
-    return `<div class="top"><div class="grow"><span class="label">Acompanhar</span><h1>Treine junto</h1></div></div>
-    <section class="block"><p class="muted">Digite o código de quem você quer incentivar. Ele aparece na aba Perfil da pessoa.</p>${formConectar()}</section>
-    ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}`;
-  }
-
-  const nome = nomeDe(atual, 'atleta');
+  if (!atual) return { aceitas };
   const A = S.acomp && S.acomp.chave === chaveAcomp(atual) ? S.acomp : null;
+  const checkins = atual.perm?.checkins && A && !A.bloqCheckins ? A.checkins : [];
+  return { aceitas, atual, A, checkins, nome: nomeDe(atual, 'atleta') };
+}
+const chipsAcomp = (aceitas, atual) => aceitas.length > 1
+  ? `<div class="chips">${aceitas.map(c => `<button class="chip ${c.id === atual.id ? 'on' : ''}" data-acomp="${c.id}">${esc(nomeDe(c, 'atleta'))}</button>`).join('')}</div>` : '';
+const semConexao = texto => `<section class="block"><div class="card stack"><h3>Treine junto</h3><p class="small muted">${texto}</p>
+  <button class="btn sm" data-aba="conexoes">Conectar com alguém</button></div></section>`;
+
+// Check-in: o meu e o de quem eu acompanho, com reações, e a meta do casal
+function telaMural() {
+  const { aceitas, atual, A, checkins, nome } = contextoAcomp();
+  const hojeIso = isoDe(hoje());
+  let deQuemAcompanho = '';
+  if (atual) {
+    if (!atual.perm?.checkins || A?.bloqCheckins) {
+      deQuemAcompanho = `<div class="card stack"><h3>Check-ins de ${esc(nome)} são privados</h3>
+        <p class="small muted">${esc(nome)} ainda não liberou ver os check-ins e fotos.</p></div>`;
+    } else if (!A?.temCheckins) {
+      deQuemAcompanho = '<p class="muted">Carregando check-ins…</p>';
+    } else {
+      const deHoje = checkins.filter(c => c.data === hojeIso);
+      deQuemAcompanho = deHoje.length ? deHoje.map(c => cartaoCheckin(atual.atleta, c, true)).join('')
+        : `<div class="card stack"><h3>${esc(nome)} ainda não fez check-in hoje</h3>
+            <p class="small muted">Que tal mandar um recado de incentivo?</p><button class="btn sm ghost" data-aba="recados">Mandar recado</button></div>
+          ${checkins[0] ? `<span class="label">Último check-in de ${esc(nome)}</span>${cartaoCheckin(atual.atleta, checkins[0], true)}` : ''}`;
+    }
+  }
+  const metas = [
+    ...meusAcompanhantes().map(c => cartaoMetaCasal(c, 'atleta', treinosNoMes(S.registros, S.checkins))),
+    ...(atual ? [cartaoMetaCasal(atual, 'viewer', atual.perm?.treinos || atual.perm?.checkins ? treinosNoMes(A?.registros || {}, checkins) : null, nome)] : []),
+  ].join('');
+  return `${cabecalho()}
+  ${secaoCheckinHoje()}
+  ${atual ? `<section class="block"><span class="label">${esc(nome)} hoje</span>${chipsAcomp(aceitas, atual)}${deQuemAcompanho}</section>` : ''}
+  ${metas}
+  ${!atual && !meusAcompanhantes().length ? semConexao('Conecte-se com quem você quer incentivar (ou com quem vai te incentivar) para ver os check-ins um do outro, reagir e combinar metas.') : ''}`;
+}
+
+// Recados: uma conversa para cada conexão aceita, dos dois lados
+function telaRecados() {
+  const conversas = S.conexoes.filter(c => c.status === 'aceita');
+  setTimeout(() => { marcarRecadosLidos(); mostrarNav(true); }, 0);
+  if (!conversas.length) return cabecalho() + semConexao('Depois de conectar com alguém, vocês trocam recados por aqui.');
+  return cabecalho() + conversas.map(c => c.atleta === meuUid()
+    ? secaoRecados(c, nomeDe(c, 'viewer'), 20, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕', 'Treino feito! 💪'])
+    : secaoRecados(c, nomeDe(c, 'atleta'), 20, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])).join('');
+}
+
+// Acompanhar: treino, semana, sequência, conquistas e peso de quem eu acompanho
+function telaAcompanhar() {
+  const { aceitas, atual, A, checkins, nome } = contextoAcomp();
+  if (!atual) return cabecalho() + semConexao('Aqui você acompanha os treinos, a semana e o progresso de quem você incentiva.');
   const semana = semanaAtual();
   const hojeIso = isoDe(hoje());
-  const verCheckins = atual.perm?.checkins && A && !A.bloqCheckins;
-  const checkins = verCheckins ? A.checkins : [];
-
-  // Check-ins: o de hoje com reações, ou o último que ela fez
-  let secaoCheckins = '';
-  if (!atual.perm?.checkins || A?.bloqCheckins) {
-    secaoCheckins = `<section class="block"><div class="card stack"><h3>Check-ins privados</h3>
-      <p class="small muted">${esc(nome)} ainda não liberou ver os check-ins e fotos.</p></div></section>`;
-  } else if (!A?.temCheckins) {
-    secaoCheckins = '<section class="block"><p class="muted">Carregando check-ins…</p></section>';
-  } else {
-    const deHoje = checkins.filter(c => c.data === hojeIso);
-    secaoCheckins = deHoje.length
-      ? `<section class="block"><span class="label">Check-in de hoje</span>${deHoje.map(c => cartaoCheckin(atual.atleta, c, true)).join('')}</section>`
-      : `<section class="block"><span class="label">Check-in de hoje</span><div class="card stack"><h3>Ainda não fez check-in hoje</h3>
-          <p class="small muted">Que tal mandar um recado de incentivo aí embaixo?</p></div>
-          ${checkins[0] ? `<span class="label">Último check-in</span>${cartaoCheckin(atual.atleta, checkins[0], true)}` : ''}</section>`;
-  }
 
   let corpo;
   if (!atual.perm?.treinos || A?.bloqTreinos) {
@@ -1052,12 +1424,8 @@ function telaAcompanhar() {
       </div></section>`;
   }
 
-  return `<div class="top"><div class="grow"><span class="label">Acompanhando</span><h1>${esc(nome)}</h1></div></div>
-  ${aceitas.length > 1 ? `<div class="chips">${aceitas.map(c => `<button class="chip ${c.id === atual.id ? 'on' : ''}" data-acomp="${c.id}">${esc(nomeDe(c, 'atleta'))}</button>`).join('')}</div>` : ''}
-  ${secaoCheckins}
-  ${cartaoMetaCasal(atual, 'viewer', atual.perm?.treinos || atual.perm?.checkins
-      ? treinosNoMes(A?.registros || {}, checkins) : null, nome)}
-  ${secaoRecados(atual, nome, 10, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])}
+  return `${cabecalho()}
+  <section class="block"><span class="label">Acompanhando</span><h2>${esc(nome)}</h2>${chipsAcomp(aceitas, atual)}</section>
   ${corpo}
   ${atual.perm?.treinos && A?.temPlano && A?.temRegistros && !A.bloqTreinos ? (() => {
     const ctx = contextoConquistas(A.plano, A.registros, checkins, A.pesos || [], atual.alturaCm);
@@ -1068,14 +1436,54 @@ function telaAcompanhar() {
   })() : ''}
   ${atual.perm?.peso && !A?.bloqPeso ? `<section class="block"><span class="label">Peso</span>
     ${!A?.temPesos ? '<p class="muted">Carregando…</p>'
-      : `${resumoPesoAcomp(A.pesos)}${cartaoImc(A.pesos, atual.alturaCm, false, null)}<div class="card">${graficoPeso('pesoAcomp', A.pesos, null)}</div>`}</section>` : ''}
-  <section class="block"><span class="label">Acompanhar outra pessoa</span>${formConectar()}</section>
-  ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}
-  <section class="block"><button class="btn ghost" data-remover-con="${atual.id}">${S.confirmar === atual.id ? `Tocar de novo para parar de acompanhar ${esc(nome)}` : `Parar de acompanhar ${esc(nome)}`}</button></section>`;
+      : `${resumoPesoAcomp(A.pesos)}${cartaoImc(A.pesos, atual.alturaCm, false, null)}<div class="card">${graficoPeso('pesoAcomp', A.pesos, null)}</div>`}</section>` : ''}`;
 }
+
+// Qual tela desenhar em cada aba/subaba
+const TELAS = {
+  treino: { hoje: () => telaHoje(), semana: () => telaSemana(), historico: () => telaHistorico() },
+  corpo: { peso: telaPeso, medidas: telaMedidas, fotos: telaFotos },
+  juntos: { mural: telaMural, recados: telaRecados, acompanhar: telaAcompanhar },
+  evolucao: { conquistas: telaConquistas, frequencia: telaFrequencia, cargas: telaCargas },
+  perfil: { dados: telaDados, conexoes: telaConexoes, avisos: telaAvisos },
+};
+
+// Conta criada, mas o e-mail ainda não foi confirmado
+function telaVerificar() {
+  mostrarNav(false);
+  app.innerHTML = `<div class="hero"><span class="label">Falta um passo</span><h1>Confirme seu e-mail</h1>
+    <p class="muted">Para usar o app, confirme que o e-mail <b>${esc(S.user.email)}</b> é seu: abra o link que enviamos para ele e volte aqui.
+      Se ainda não recebeu, toque em "Enviar o link de novo".</p></div>
+  <div class="stack">
+    <button class="btn" data-acao="ja-confirmei">Já confirmei</button>
+    <button class="btn ghost" data-acao="reenviar-verificacao">Enviar o link de novo</button>
+    <p class="small muted">Não chegou? Olhe a caixa de spam e as promoções. O remetente é o Treino Junto (noreply@…firebaseapp.com).</p>
+    <p class="erro" id="verificarErro" hidden></p>
+    <button class="link" data-acao="sair">Errei o e-mail · usar outra conta</button>
+  </div>`;
+}
+
+async function jaConfirmei(silencioso) {
+  try {
+    if (await Store.conferirVerificacao()) {
+      S.user = { ...S.user, verificado: true };
+      comecarEscutas(S.user);
+      toast('E-mail confirmado. Bem-vinda(o)! 🎉');
+      render();
+    } else if (!silencioso) {
+      const el = $('#verificarErro');
+      if (el) { el.textContent = 'Ainda não aparece como confirmado. Toque no link do e-mail e tente de novo.'; el.hidden = false; }
+    }
+  } catch (err) { if (!silencioso) toast(mensagemErro(err)); }
+}
+// Voltou do aplicativo de e-mail: confere sozinho
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && S.user && !S.user.verificado) jaConfirmei(true);
+});
 
 function render() {
   if (!Store.configurado) return telaSemConfig();
+  if (S.user && !S.user.verificado) return telaVerificar();
   if (S.user === undefined || (S.user && S.perfil === undefined)) {
     mostrarNav(false);
     app.innerHTML = '<p class="muted carregando">Carregando…</p>';
@@ -1087,8 +1495,7 @@ function render() {
   const foco = document.activeElement?.id;
   const rascunho = {};
   app.querySelectorAll('input[id]:not([type=file]):not([type=checkbox])').forEach(i => { rascunho[i.id] = i.value; });
-  app.innerHTML = S.aba === 'semana' ? telaSemana() : S.aba === 'perfil' ? telaPerfil()
-    : S.aba === 'acompanhar' ? telaAcompanhar() : S.aba === 'progresso' ? telaProgresso() : telaHoje();
+  app.innerHTML = TELAS[S.aba][S.sub[S.aba]]();
   for (const [id, valor] of Object.entries(rascunho)) {
     const el = document.getElementById(id);
     if (el) el.value = valor;
@@ -1096,11 +1503,18 @@ function render() {
   if (foco) document.getElementById(foco)?.focus();
 }
 
-function irPara(aba) {
-  S.aba = aba;
-  app.innerHTML = ''; // troca de aba começa limpa, sem levar o rascunho da outra
+// nome = aba ('treino') ou subaba ('semana'); aba sozinha volta para a última subaba usada nela
+function irPara(nome) {
+  const rota = ROTAS[nome];
+  if (!rota) return;
+  S.aba = rota[0];
+  if (rota[1]) S.sub[rota[0]] = rota[1];
+  S.editandoEx = null;
+  app.innerHTML = ''; // troca de tela começa limpa, sem levar o rascunho da outra
   render();
   window.scrollTo(0, 0);
+  // Endereço com o nome da tela: dá para salvar o atalho e os avisos abrem no lugar certo
+  try { history.replaceState(null, '', '#' + S.sub[S.aba]); } catch { /* ok */ }
 }
 
 // ---------- Login e escutas ----------
@@ -1205,10 +1619,12 @@ if (Store.configurado) {
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     pararDeAcompanhar(); pararMensagens();
-    if (user) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
+    // Só carrega os dados depois que o e-mail foi confirmado (as regras do banco também exigem)
+    if (user?.verificado) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
     // Mantém o registro do aparelho atualizado (o código do aparelho pode mudar com o tempo)
     if (user && Store.avisosConfigurados && permissao() === 'granted') Store.registrarAparelho(user.uid).catch(console.warn);
-    S.aba = abaDoEndereco(location.hash) || 'hoje';
+    const rota = ROTAS[rotaDoEndereco(location.hash)] || ROTAS.hoje;
+    S.aba = rota[0]; if (rota[1]) S.sub[rota[0]] = rota[1];
     app.innerHTML = '';
     render();
   });
@@ -1289,6 +1705,31 @@ document.addEventListener('click', e => {
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
     return;
   }
+  if (b.dataset.diaHist) { S.diaHist = b.dataset.diaHist; render(); return; }
+  if (b.dataset.mes) {
+    const atual = S.mesHist || isoDe(hoje()).slice(0, 7);
+    const [a, m] = atual.split('-').map(Number);
+    const novo = new Date(a, m - 1 + +b.dataset.mes, 15);
+    S.mesHist = isoDe(novo).slice(0, 7); S.diaHist = null; render();
+    return;
+  }
+  if (b.dataset.serie) { marcarSerie(b.dataset.serie); return; }
+  if (b.dataset.descansar) { const e = exercicioDeHoje(b.dataset.descansar); if (e) iniciarDescanso(e); return; }
+  if (b.dataset.timer) {
+    const t = b.dataset.timer;
+    if (t === 'fechar') pararDescanso(); else if (t === 'padrao') salvarDescansoPadrao(); else ajustarDescanso(+t);
+    return;
+  }
+  if (b.dataset.editarEx) { S.editandoEx = b.dataset.editarEx; render(); document.getElementById('edNome')?.focus(); return; }
+  if (b.dataset.cancelarEx !== undefined) { S.editandoEx = null; render(); return; }
+  if (b.dataset.verModelos !== undefined) { S.verModelos = !S.verModelos; render(); return; }
+  if (b.dataset.usarModelo) {
+    const chave = 'modelo:' + b.dataset.usarModelo;
+    if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
+    S.confirmar = null; S.verModelos = false;
+    usarModelo(MODELOS.find(m => m.id === b.dataset.usarModelo));
+    return;
+  }
   if (b.dataset.verConquistas !== undefined) { S.verTodasConquistas = !S.verTodasConquistas; render(); return; }
   if (b.dataset.exSel) { S.exSel = b.dataset.exSel; render(); return; }
   if (b.dataset.apagarFotoProg) {
@@ -1332,6 +1773,8 @@ document.addEventListener('click', e => {
     const id = b.dataset.marcar, data = isoDe(hoje());
     const feito = !(S.registros[data]?.feitos || []).includes(id);
     salvar(Store.marcarExercicio(uid(), data, id, feito));
+    // Marcou direto: todas as séries contam como feitas; desmarcou: zera as séries
+    const series = seriesFeitas(); series[id] = feito ? (exercicioDeHoje(id)?.series || 1) : 0; guardarSeries(series);
     const plano = S.plano[hoje().getDay()];
     const depois = new Set(S.registros[data]?.feitos || []); feito ? depois.add(id) : depois.delete(id);
     if (feito && plano && plano.exercicios.every(x => depois.has(x.id))) toast('Treino completo! Arrasou 💪');
@@ -1351,10 +1794,19 @@ document.addEventListener('click', e => {
   }
 
   const acao = b.dataset.acao;
-  if (acao === 'abrir-checkin') { S.checkin = { aberto: true, foto: null, processando: false, enviando: false }; render(); return; }
+  if (acao === 'abrir-checkin') {
+    S.checkin = { aberto: true, foto: null, processando: false, enviando: false };
+    if (S.sub.juntos === 'mural' && S.aba === 'juntos') render(); else irPara('mural');
+    return;
+  }
   if (acao === 'cancelar-checkin') { S.checkin.aberto = false; S.checkin.foto = null; render(); return; }
   if (acao === 'enviar-checkin') { enviarCheckin(); return; }
   if (acao === 'ativar-avisos') { ativarAvisos(); return; }
+  if (acao === 'ja-confirmei') { jaConfirmei(false); return; }
+  if (acao === 'reenviar-verificacao') {
+    Store.reenviarVerificacao().then(() => toast('E-mail reenviado. Olhe também no spam.'), err => toast(mensagemErro(err)));
+    return;
+  }
   if (acao === 'dispensar-avisos') { try { localStorage.setItem('avisos-dispensado', '1'); } catch { /* ok */ } render(); return; }
   if (acao === 'sair') salvar(Store.sair());
   if (acao === 'copiar') {
@@ -1368,6 +1820,23 @@ document.addEventListener('click', e => {
       err => mostrarErroLogin(mensagemErro(err)));
   }
 });
+
+// Aplica um modelo: dias do modelo ganham o treino; os outros viram descanso
+async function usarModelo(m) {
+  if (!m) return;
+  try {
+    await Promise.all([0, 1, 2, 3, 4, 5, 6].map(d => {
+      const atual = S.plano[d];
+      if (m.dias[d]) {
+        const [titulo, lista] = m.dias[d];
+        return Store.salvarDia(uid(), d, { titulo, exercicios: lista.map(x => ({ ...x, id: novoId() })), desde: planoDoDia(d).desde });
+      }
+      return atual?.exercicios?.length ? Store.salvarDia(uid(), d, { titulo: '', exercicios: [] }) : null;
+    }));
+    toast(`Semana montada com o modelo "${m.nome}" 💪`);
+    window.scrollTo(0, 0);
+  } catch (err) { console.error(err); toast(mensagemErro(err)); }
+}
 
 async function enviarRecado(conexaoId, texto, mostrarToast = true) {
   try {
@@ -1492,10 +1961,28 @@ document.addEventListener('submit', async e => {
       id: novoId(), nome: nome.slice(0, 60),
       series: Math.min(20, Math.max(1, parseInt($('#exseries').value, 10) || 1)),
       reps: $('#exreps').value.trim().slice(0, 12), carga: $('#excarga').value.trim().slice(0, 16),
+      descanso: parseInt($('#exdescanso').value, 10) || 60,
     });
     $('#exnome').value = ''; $('#excarga').value = '';
     await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício adicionado');
     $('#exnome')?.focus();
+  }
+
+  if (f.dataset.editarForm) {
+    const p = planoDoDia(S.diaSel);
+    const e = p.exercicios.find(x => x.id === f.dataset.editarForm);
+    const nome = $('#edNome').value.trim();
+    if (!e || !nome) return toast('Digite o nome do exercício.');
+    Object.assign(e, {
+      nome: nome.slice(0, 60),
+      series: Math.min(20, Math.max(1, parseInt($('#edSeries').value, 10) || 1)),
+      reps: $('#edReps').value.trim().slice(0, 12),
+      carga: $('#edCarga').value.trim().slice(0, 16),
+      descanso: parseInt($('#edDescanso').value, 10) || 60,
+    });
+    S.editandoEx = null;
+    await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício atualizado');
+    return;
   }
 
   if (f.dataset.metaCasal) {
@@ -1591,14 +2078,18 @@ document.addEventListener('submit', async e => {
   }
 });
 
-// ---------- Abrir na aba certa (ex.: tocar no aviso "fez check-in" abre o Acompanhar) ----------
-function abaDoEndereco(endereco) {
-  const aba = String(endereco || '').split('#')[1];
-  return ABAS.some(([k]) => k === aba) ? aba : null;
+// ---------- Abrir na tela certa (ex.: tocar no aviso de recado abre os Recados) ----------
+function rotaDoEndereco(endereco) {
+  const nome = String(endereco || '').split('#')[1];
+  return nome && ROTAS[nome] ? nome : null;
 }
 navigator.serviceWorker?.addEventListener('message', e => {
-  const aba = abaDoEndereco(e.data?.abrir);
-  if (aba && S.user) irPara(aba);
+  const nome = rotaDoEndereco(e.data?.abrir);
+  if (nome && S.user) irPara(nome);
+});
+window.addEventListener('hashchange', () => {
+  const nome = rotaDoEndereco(location.hash);
+  if (nome && S.user && S.sub[S.aba] !== nome && S.aba !== nome) irPara(nome);
 });
 
 // ---------- App instalável e offline ----------

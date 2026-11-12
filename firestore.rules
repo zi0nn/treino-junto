@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Regras de segurança do Treino Junto (com cargas e fotos de antes e depois).
+// Regras de segurança do Treino Junto (com e-mail confirmado obrigatório).
 // Copie tudo e cole no Console do Firebase > Firestore Database > Regras > Publicar.
 //
 // Resumo: cada pessoa só altera os próprios dados.
@@ -9,7 +9,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function logado() { return request.auth != null; }
+    // Conta criada (mesmo sem confirmar o e-mail): só serve para criar o próprio perfil no cadastro
+    function autenticado() { return request.auth != null; }
+    // Para todo o resto, o e-mail precisa estar confirmado
+    function logado() { return request.auth != null && request.auth.token.email_verified == true; }
     function eu(uid) { return logado() && request.auth.uid == uid; }
 
     // Quem está logado acompanha "uid", com o pedido aceito e a permissão "chave" ligada
@@ -34,9 +37,9 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if eu(uid);
+      allow read: if autenticado() && request.auth.uid == uid; // o cadastro confere se o perfil já existe
       // Ao criar, o código precisa estar reservado para esta pessoa
-      allow create: if eu(uid) && perfilValido()
+      allow create: if autenticado() && request.auth.uid == uid && perfilValido()
         && getAfter(/databases/$(database)/documents/codigos/$(request.resource.data.codigo)).data.uid == uid;
       // O código de conexão nunca muda depois de criado
       allow update: if eu(uid) && perfilValido() && request.resource.data.codigo == resource.data.codigo;
@@ -122,8 +125,8 @@ service cloud.firestore {
     // Códigos de conexão: qualquer pessoa logada pode conferir UM código (não dá para listar todos).
     // Cada um só reserva código para si mesmo, e ninguém altera nem apaga.
     match /codigos/{codigo} {
-      allow get: if logado();
-      allow create: if logado() && request.resource.data.keys().hasOnly(['uid'])
+      allow get: if autenticado();
+      allow create: if autenticado() && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
         && codigo.matches('^FIT-[A-Z0-9]{4}$');
     }
