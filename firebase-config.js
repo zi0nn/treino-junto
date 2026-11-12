@@ -21,7 +21,7 @@ export const firebaseConfig = {
 export const VAPID_KEY = 'BPlLJMcHX9fFPJMaiVrBxHKkdbSUYywWCm-zPOgtEOlo6OmmEGctyKyTn1TBtU-2iauZCmeA7rR9VRRVjM_XDzE';
 
 // Endereço do script de avisos (Google Apps Script publicado como App da Web, termina em /exec)
-export const AVISOS_URL = 'https://script.google.com/macros/s/AKfycby219j_ekFMpjmuSVVngmd3TbuyypOj4-viJFEBEckiYTnc02wNPbcyZXjqTrjwIZeSWw/exec';
+export const AVISOS_URL = 'https://script.google.com/macros/s/AKfycbyNti1YGwNkW91QAFxkgDh7flbvAJKVJHIhtGt_cWgyWL_Z8G4-ibnueD6lmvK2_jstpw/exec';
 
 // Proteção contra abuso (App Check). Chave PÚBLICA do reCAPTCHA v3 (pode ficar à mostra).
 // Enquanto estiver "COLE_AQUI", o app funciona normalmente, só sem essa proteção. Veja COMO-CONFIGURAR.md, seção 8.
