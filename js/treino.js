@@ -251,6 +251,8 @@ export function telaModoTreino() {
   const topo = `<div class="modo-topo"><button class="mini ghost" data-acao="sair-modo">✕ Sair</button>
       <span class="small muted tabular">${qtd} de ${exs.length} exercícios</span></div>
     <div class="bar"><i style="width:${pct}%"></i></div>`;
+  // Se o treino do dia mudou com o modo aberto (exercício removido), vai para o próximo que falta
+  if (S.modo.i >= exs.length) S.modo.i = proximoPendente(-1);
   const i = S.modo.i;
   if (i < 0 || !exs[i]) {
     const ck = S.checkins.some(c => c.data === isoDe(hoje()));
@@ -354,7 +356,7 @@ export function quandoCheckin(c) {
 export function cartaoCheckin(dono, c, podeReagir) {
   const reacoes = Object.entries(c.reacoes || {});
   const minha = c.reacoes?.[meuUid()];
-  const nomeViewer = uid => nomeDe(S.conexoes.find(x => x.viewer === uid && x.atleta === meuUid()) || {}, 'viewer');
+  const nomeViewer = quem => nomeDe(S.conexoes.find(x => x.viewer === quem && x.atleta === meuUid()) || {}, 'viewer');
   return `<div class="card stack">
     <div class="row between"><h3 class="grow">Check-in · ${quandoCheckin(c)}</h3>
       ${podeReagir ? '' : `<button class="link" data-apagar-ck="${c.id}">${S.confirmar === 'ck:' + c.id ? 'Confirmar' : 'Apagar'}</button>`}</div>
@@ -362,13 +364,13 @@ export function cartaoCheckin(dono, c, podeReagir) {
     ${c.legenda ? `<p>${esc(c.legenda)}</p>` : ''}
     ${podeReagir
       ? `<div class="reacoes">${Store.REACOES.map(e => `<button class="${minha === e ? 'on' : ''}" data-reagir="${c.id}" data-emoji="${e}" aria-pressed="${minha === e}">${e}</button>`).join('')}</div>`
-      : reacoes.length ? `<div class="reacoes">${reacoes.map(([uid, e]) => `<span class="pill ok">${e} ${esc(nomeViewer(uid))}</span>`).join('')}</div>` : ''}
+      : reacoes.length ? `<div class="reacoes">${reacoes.map(([quem, emoji]) => `<span class="pill ok">${emoji} ${esc(nomeViewer(quem))}</span>`).join('')}</div>` : ''}
   </div>`;
 }
 
 export function secaoCheckinHoje() {
   const hojeIso = isoDe(hoje());
-  const feitosHoje = S.checkins.filter(c => c.data === hojeIso);
+  const checkinsDeHoje = S.checkins.filter(c => c.data === hojeIso);
   const ck = S.checkin;
   if (ck.aberto) {
     return `<section class="block"><span class="label">Check-in</span>
@@ -381,8 +383,8 @@ export function secaoCheckinHoje() {
           <button class="btn" data-acao="enviar-checkin" ${ck.enviando || ck.processando ? 'disabled' : ''}>${ck.enviando ? 'Enviando…' : 'Enviar check-in'}</button></div>
       </div></section>`;
   }
-  if (feitosHoje.length) {
-    return `<section class="block"><span class="label">Check-in de hoje</span>${feitosHoje.map(c => cartaoCheckin(meuUid(), c, false)).join('')}</section>`;
+  if (checkinsDeHoje.length) {
+    return `<section class="block"><span class="label">Check-in de hoje</span>${checkinsDeHoje.map(c => cartaoCheckin(meuUid(), c, false)).join('')}</section>`;
   }
   return `<section class="block"><button class="btn grande" data-acao="abrir-checkin">Cheguei na academia · fazer check-in</button></section>`;
 }

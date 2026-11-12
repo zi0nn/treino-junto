@@ -134,7 +134,7 @@ service cloud.firestore {
       allow delete: if logado() && resource.data.uid == request.auth.uid; // ao apagar a conta
     }
 
-    // Registro de erros do app: quem tem login grava em nome próprio; ninguém lê pelo app
+    // Registro de erros do app: quem tem login grava em nome próprio; cada um só enxerga os próprios
     // (quem mantém o app vê no Console do Firebase e na planilha de backup)
     match /erros/{id} {
       allow create: if autenticado()
@@ -142,9 +142,11 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.mensagem is string && request.resource.data.mensagem.size() <= 300
         && request.resource.data.detalhe is string && request.resource.data.detalhe.size() <= 1500;
+      // Cada um lê e apaga só os próprios (usado ao apagar a conta)
+      allow read, delete: if autenticado() && resource.data.uid == request.auth.uid;
     }
 
-    // Sugestões: qualquer pessoa com conta confirmada envia; ninguém lê pelo app
+    // Sugestões: qualquer pessoa com conta confirmada envia; cada um só enxerga as próprias
     // (quem mantém o app vê no Console do Firebase e na planilha de backup)
     match /sugestoes/{id} {
       allow create: if logado()
@@ -152,6 +154,8 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.tipo in ['ideia', 'problema']
         && request.resource.data.texto is string && request.resource.data.texto.size() > 0 && request.resource.data.texto.size() <= 1000;
+      // Cada um lê e apaga só as próprias (usado ao apagar a conta)
+      allow read, delete: if logado() && resource.data.uid == request.auth.uid;
     }
 
     // Aparelhos que recebem avisos: o id é o código do aparelho no Firebase Cloud Messaging.

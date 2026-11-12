@@ -428,6 +428,11 @@ export async function apagarTudo(uid, codigo, progresso = () => {}) {
   for (const sub of ['plano', 'registros', 'checkins', 'fotos', 'pesos', 'medidas', 'fotosProgresso']) {
     await apagarColecao(['users', uid, sub]);
   }
+  progresso('Apagando sugestões e registros de erro…');
+  for (const col of ['sugestoes', 'erros']) {
+    const meus = await getDocs(query(collection(db, col), where('uid', '==', uid)));
+    await Promise.all(meus.docs.map(d => deleteDoc(d.ref)));
+  }
   progresso('Desligando os avisos…');
   const aparelhos = await getDocs(query(collection(db, 'dispositivos'), where('uid', '==', uid)));
   await Promise.all(aparelhos.docs.map(d => deleteDoc(d.ref)));

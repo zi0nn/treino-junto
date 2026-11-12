@@ -208,6 +208,18 @@ describe('Registro de erros', () => {
     await assertSucceeds(addDoc(collection(db, 'erros'), erro(ANA)));
     await assertFails(getDocs(collection(db, 'erros')));
   });
+  it('ao apagar a conta, cada um encontra e apaga só os próprios erros e sugestões', async () => {
+    const ana = banco(ANA);
+    const ref = await addDoc(collection(ana, 'erros'), erro(ANA));
+    const sug = await addDoc(collection(ana, 'sugestoes'), { uid: ANA, nome: 'Ana', email: 'a', tipo: 'ideia', texto: 'x', versao: '1', criadoEm: serverTimestamp() });
+    await assertSucceeds(getDocs(query(collection(ana, 'erros'), where('uid', '==', ANA))));
+    await assertSucceeds(getDocs(query(collection(ana, 'sugestoes'), where('uid', '==', ANA))));
+    await assertFails(deleteDoc(doc(banco(CAIO), 'erros', ref.id)));
+    await assertFails(deleteDoc(doc(banco(CAIO), 'sugestoes', sug.id)));
+    await assertFails(getDocs(query(collection(banco(CAIO), 'sugestoes'), where('uid', '==', ANA))));
+    await assertSucceeds(deleteDoc(doc(ana, 'erros', ref.id)));
+    await assertSucceeds(deleteDoc(doc(ana, 'sugestoes', sug.id)));
+  });
   it('não grava erro em nome de outra pessoa nem sem login', async () => {
     await assertFails(addDoc(collection(banco(ANA), 'erros'), erro(BETO)));
     await assertFails(addDoc(collection(anonimo(), 'erros'), erro(ANA)));

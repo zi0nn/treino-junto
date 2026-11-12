@@ -56,6 +56,8 @@ export function escolherTema(tema) {
   const escuro = tema === 'dark' || (tema === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', escuro ? '#0E1412' : '#1E7A58');
 }
+// No "Automático", se o celular trocar de tema com o app aberto, a barra acompanha
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (temaAtual() === 'auto') escolherTema('auto'); });
 
 // Apagar a conta: aviso claro, digitar APAGAR e confirmar a senha (ou o Google)
 export function secaoApagarConta() {

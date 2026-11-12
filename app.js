@@ -147,9 +147,13 @@ export async function jaConfirmei(silencioso) {
     }
   } catch (err) { if (!silencioso) toast(mensagemErro(err)); }
 }
-// Voltou do aplicativo de e-mail: confere sozinho
+// Voltou para o app:
+// - confere sozinho se o e-mail foi confirmado (veio do aplicativo de e-mail)
+// - no modo treino, pede de novo para a tela não apagar (o celular solta isso ao sair do app)
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && S.user && !S.user.verificado) jaConfirmei(true);
+  if (document.hidden) return;
+  if (S.user && !S.user.verificado) jaConfirmei(true);
+  if (S.modo) navigator.wakeLock?.request('screen').then(w => { if (S.modo) S.modo.wake = w; }, () => {});
 });
 
 export function render() {
@@ -283,8 +287,8 @@ const errosEnviados = new Set();
 function reportarErro(mensagem, detalhe) {
   const msg = String(mensagem || 'Erro sem mensagem');
   if (errosEnviados.size >= 5 || errosEnviados.has(msg)) return;
-  // Falta de internet e permissões do celular não são erros do app
-  if (/network|offline|Failed to fetch|NotAllowedError|AbortError|quota/i.test(msg)) return;
+  // Falta de internet, permissões do celular e recusas esperadas do banco não são erros do app
+  if (/network|offline|Failed to fetch|NotAllowedError|AbortError|quota|permission-denied|insufficient permissions|auth\//i.test(msg)) return;
   errosEnviados.add(msg);
   Store.registrarErro({ mensagem: msg, detalhe, tela: S.sub?.[S.aba] || S.aba }).catch(() => {});
 }
@@ -414,7 +418,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.dataset.serie) { marcarSerie(b.dataset.serie); return; }
-  if (b.dataset.descansar) { const e = exercicioDeHoje(b.dataset.descansar); if (e) iniciarDescanso(e); return; }
+  if (b.dataset.descansar) { const exercicio = exercicioDeHoje(b.dataset.descansar); if (exercicio) iniciarDescanso(exercicio); return; }
   if (b.dataset.timer) {
     const t = b.dataset.timer;
     if (t === 'fechar') pararDescanso(); else if (t === 'padrao') salvarDescansoPadrao(); else ajustarDescanso(+t);
@@ -664,7 +668,7 @@ document.addEventListener('submit', async e => {
     } catch (err) {
       cadastrando = false;
       if (S.user) { // a conta foi criada, só o perfil falhou: tenta de novo
-        Store.criarPerfil(S.user.uid, nome || S.user.email.split('@')[0], S.user.email).catch(e => toast(mensagemErro(e)));
+        Store.criarPerfil(S.user.uid, nome || S.user.email.split('@')[0], S.user.email).catch(erroPerfil => toast(mensagemErro(erroPerfil)));
         return;
       }
       mostrarErroLogin(mensagemErro(err));
@@ -691,10 +695,10 @@ document.addEventListener('submit', async e => {
 
   if (f.dataset.editarForm) {
     const p = planoDoDia(S.diaSel);
-    const e = p.exercicios.find(x => x.id === f.dataset.editarForm);
+    const editado = p.exercicios.find(x => x.id === f.dataset.editarForm);
     const nome = $('#edNome').value.trim();
-    if (!e || !nome) return toast('Digite o nome do exercício.');
-    Object.assign(e, {
+    if (!editado || !nome) return toast('Digite o nome do exercício.');
+    Object.assign(editado, {
       nome: nome.slice(0, 60),
       series: Math.min(20, Math.max(1, parseInt($('#edSeries').value, 10) || 1)),
       reps: $('#edReps').value.trim().slice(0, 12),
