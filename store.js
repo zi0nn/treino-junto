@@ -106,7 +106,10 @@ export const provedorAtual = () => auth.currentUser?.providerData?.[0]?.provider
 
 // ---------- Confirmação do e-mail ----------
 // A conta só funciona depois que a pessoa toca no link que chega no e-mail.
-export const reenviarVerificacao = () => sendEmailVerification(auth.currentUser);
+export async function reenviarVerificacao() {
+  await sendEmailVerification(auth.currentUser);
+  marcarEnvio();
+}
 
 // Confere de novo no Firebase se o e-mail já foi confirmado (e atualiza o login para as regras do banco)
 export async function conferirVerificacao() {
@@ -121,13 +124,22 @@ export const entrar = (email, senha) => signInWithEmailAndPassword(auth, normali
 export const sair = async () => { await esquecerAparelho(); await signOut(auth); };
 export const esqueciSenha = email => sendPasswordResetEmail(auth, normalizarEmail(email));
 
+// O e-mail de confirmação sai LOGO depois de criar o login, antes de qualquer outra coisa:
+// se o perfil falhar depois (internet, por exemplo), o e-mail já foi.
+// Devolve { user, erroEmail } para a tela avisar se o envio falhou.
 export async function criarConta(nome, email, senha) {
   const { user } = await createUserWithEmailAndPassword(auth, normalizarEmail(email), senha);
+  let erroEmail = null;
+  try { await sendEmailVerification(user); } catch (err) { erroEmail = err; console.error('E-mail de confirmação não enviado', err); }
+  marcarEnvio();
   await updateProfile(user, { displayName: nome });
   await criarPerfil(user.uid, nome, user.email);
-  try { await sendEmailVerification(user); } catch (err) { console.warn('E-mail de confirmação não enviado', err); }
-  return user;
+  return { user, erroEmail };
 }
+
+// Quando foi o último envio do link (para a tela mostrar e evitar cliques repetidos)
+function marcarEnvio() { try { localStorage.setItem('verificacao-enviada', String(Date.now())); } catch { /* ok */ } }
+export function ultimoEnvio() { try { return +localStorage.getItem('verificacao-enviada') || 0; } catch { return 0; } }
 
 // Código de conexão curto (ex.: FIT-4K7Q). Sem letras parecidas (0/O, 1/I).
 function novoCodigo() {

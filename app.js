@@ -111,13 +111,24 @@ async function concluirBoasVindas() {
 // Conta criada, mas o e-mail ainda não foi confirmado
 export function telaVerificar() {
   mostrarNav(false);
+  const envio = Store.ultimoEnvio();
+  const quando = envio ? new Date(envio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
   app.innerHTML = `<div class="hero"><span class="label">Falta um passo</span><h1>Confirme seu e-mail</h1>
-    <p class="muted">Para usar o app, confirme que o e-mail <b>${esc(S.user.email)}</b> é seu: abra o link que enviamos para ele e volte aqui.
-      Se ainda não recebeu, toque em "Enviar o link de novo".</p></div>
+    <p class="muted">Para usar o app, confirme que o e-mail <b>${esc(S.user.email)}</b> é seu: abra o link que enviamos para ele e volte aqui.</p>
+    ${quando ? `<p class="small">📨 Último envio às <b>${quando}</b>. Pode levar alguns minutos para chegar.</p>` : ''}</div>
   <div class="stack">
     <button class="btn" data-acao="ja-confirmei">Já confirmei</button>
-    <button class="btn ghost" data-acao="reenviar-verificacao">Enviar o link de novo</button>
-    <p class="small muted">Não chegou? Olhe a caixa de spam e as promoções. O remetente é o Treino Junto (noreply@…firebaseapp.com).</p>
+    <button class="btn ghost" data-acao="reenviar-verificacao" id="reenviarBtn">Enviar o link de novo</button>
+    <div class="card stack">
+      <b>Não chegou?</b>
+      <ul class="lista small">
+        <li>Procure na caixa de <b>spam</b>, em <b>Promoções</b> e em <b>Lixeira</b>.</li>
+        <li>Pesquise no e-mail por <b>firebaseapp.com</b> ou <b>Treino Junto</b>.</li>
+        <li>Confira se o endereço acima está certo. Se tiver erro, toque em "Errei o e-mail" e crie de novo.</li>
+        <li>Hotmail e Outlook às vezes seguram o e-mail por alguns minutos.</li>
+        <li>Mais fácil: saia e use <b>Entrar com Google</b>, que já vem confirmado.</li>
+      </ul>
+    </div>
     <p class="erro" id="verificarErro" hidden></p>
     <button class="link" data-acao="sair">Errei o e-mail · usar outra conta</button>
   </div>`;
@@ -512,7 +523,13 @@ document.addEventListener('click', e => {
     return;
   }
   if (acao === 'reenviar-verificacao') {
-    Store.reenviarVerificacao().then(() => toast('E-mail reenviado. Olhe também no spam.'), err => toast(mensagemErro(err)));
+    const btn = $('#reenviarBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    Store.reenviarVerificacao().then(() => { render(); toast('Link enviado! Olhe também no spam e em Promoções.'); }, err => {
+      console.error(err);
+      const el = $('#verificarErro');
+      if (el) { el.textContent = err.code === 'auth/too-many-requests' ? 'Muitos envios seguidos. Espere uns 10 minutos e tente de novo (o último link enviado continua valendo).' : mensagemErro(err); el.hidden = false; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar o link de novo'; }
+    });
     return;
   }
   if (acao === 'dispensar-avisos') { try { localStorage.setItem('avisos-dispensado', '1'); } catch { /* ok */ } render(); return; }
@@ -640,7 +657,10 @@ document.addEventListener('submit', async e => {
     const btn = $('#loginBtn'); btn.disabled = true; btn.textContent = criar ? 'Criando conta…' : 'Entrando…';
     cadastrando = criar;
     try {
-      if (criar) await Store.criarConta(nome, email, senha); else await Store.entrar(email, senha);
+      if (criar) {
+        const { erroEmail } = await Store.criarConta(nome, email, senha);
+        if (erroEmail) setTimeout(() => { const el = $('#verificarErro'); if (el) { el.textContent = 'Não conseguimos enviar o e-mail de confirmação agora (' + mensagemErro(erroEmail) + '). Toque em "Enviar o link de novo".'; el.hidden = false; } }, 300);
+      } else await Store.entrar(email, senha);
     } catch (err) {
       cadastrando = false;
       if (S.user) { // a conta foi criada, só o perfil falhou: tenta de novo

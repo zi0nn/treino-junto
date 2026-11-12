@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, before, after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, serverTimestamp, deleteField,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, serverTimestamp, deleteField, runTransaction,
 } from 'firebase/firestore';
 
 let env;
@@ -69,6 +69,17 @@ describe('Login e e-mail confirmado', () => {
     await assertSucceeds(setDoc(doc(db, 'codigos', 'FIT-NNNN'), { uid: NOVO }));
     await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'codigos', 'FIT-NNNN'), { uid: NOVO }));
     await assertSucceeds(setDoc(doc(db, 'users', NOVO), perfil('Novo', 'FIT-NNNN')));
+  });
+  it('cadastro completo (igual ao app): confere, reserva o código e cria o perfil numa transação', async () => {
+    const db = banco('nova2', false);
+    await assertSucceeds(runTransaction(db, async tx => {
+      const refPerfil = doc(db, 'users', 'nova2');
+      const refCodigo = doc(db, 'codigos', 'FIT-QQQQ');
+      if ((await tx.get(refPerfil)).exists()) return;
+      if ((await tx.get(refCodigo)).exists()) throw new Error('código já existe');
+      tx.set(refCodigo, { uid: 'nova2' });
+      tx.set(refPerfil, { nome: 'Nova', email: 'nova2@teste.com', codigo: 'FIT-QQQQ', metaPeso: null, criadoEm: serverTimestamp() });
+    }));
   });
   it('conta sem e-mail confirmado não usa o resto do app', async () => {
     const db = banco(NOVO, false);
