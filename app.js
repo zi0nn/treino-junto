@@ -10,7 +10,7 @@ import * as Store from './store.js';
 import { $, DIAS_NOME, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, pad, quemAcompanho, toast } from './js/base.js';
 import { TELAS } from './js/juntos.js';
 import { ativarAvisos, estadoAvisos, permissao } from './js/perfil.js';
-import { MEDIDAS, dataCurta, kgBR, mesAtual, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
+import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
 import { MODELOS, ajustarDescanso, exercicioDeHoje, guardarSeries, iniciarDescanso, marcarSerie, pararDescanso, prepararFoto, salvarDescansoPadrao, seriesFeitas, telaLogin, telaSemConfig } from './js/treino.js';
 
 // ---------- Primeiro acesso guiado ----------
@@ -40,14 +40,14 @@ export function telaBoasVindas() {
         <div class="field"><label class="label" for="bvNome">Como quer ser chamada(o)?</label><input id="bvNome" maxlength="40" value="${esc(p.nome)}"></div>
         <div class="grid3" style="grid-template-columns:1fr 1fr">
           <div class="field"><label class="label" for="bvAltura">Altura (cm)</label><input id="bvAltura" inputmode="numeric" maxlength="4" placeholder="165" value="${p.alturaCm ?? ''}"></div>
-          <div class="field"><label class="label" for="bvMeta">Meta de peso (kg)</label><input id="bvMeta" inputmode="decimal" maxlength="6" placeholder="Opcional" value="${p.metaPeso != null ? kgBR(p.metaPeso) : ''}"></div>
+          <div class="field"><label class="label" for="bvPeso">Peso atual (kg)</label><input id="bvPeso" inputmode="decimal" maxlength="6" placeholder="72,5" value="${S.pesos.at(-1) ? kgBR(S.pesos.at(-1).kg) : ''}"></div>
         </div>
-        <p class="small muted">A altura serve para o IMC. A meta você pode definir depois, com a ajuda da faixa de peso saudável.</p>
+        <p class="small muted">Com a altura e o peso o app calcula o seu IMC e mostra a faixa de peso saudável para você. A meta dá para definir depois, com essa ajuda.</p>
         <button class="btn" type="submit">Continuar</button>
       </form>`;
   } else if (passo === 2) {
     const sel = S.bv.modelo ?? 'sozinho';
-    corpo = `<h1>Como quer treinar?</h1>
+    corpo = `${pontoDePartida(p)}<h1>Como quer treinar?</h1>
       <p class="muted">Escolha um modelo para começar. Dá para editar qualquer exercício depois, em Treino › Semana.</p>
       <div class="stack">
         ${MODELOS.map(m => `<button class="card modelo-opcao ${sel === m.id ? 'on' : ''}" data-bv-modelo="${m.id}" aria-pressed="${sel === m.id}">
@@ -70,7 +70,24 @@ export function telaBoasVindas() {
     ${passo < 3 ? '<button class="link" data-acao="bv-pular">Pular e ir direto para o app</button>' : ''}</div>`;
 }
 
-export async function concluirBoasVindas() {
+export // Resultado do passo 1: IMC e faixa saudável com o peso e a altura que a pessoa acabou de informar
+function pontoDePartida(p) {
+  const kg = S.pesos.at(-1)?.kg;
+  if (!kg || !p.alturaCm) return '';
+  const imc = calcImc(kg, p.alturaCm), faixa = faixaImc(imc);
+  const [min, max] = faixaSaudavel(p.alturaCm);
+  const conta = kg > max ? `Para chegar à faixa saudável, faltam <b class="tabular">${kgBR(kg - max)} kg</b>. O app acompanha esse caminho com você.`
+    : kg < min ? 'Você está abaixo da faixa saudável: vale conversar com um nutricionista antes de pensar em perder peso.'
+    : 'Você já está na faixa saudável. O foco agora pode ser força e condicionamento 💪';
+  return `<div class="card stack aviso">
+    <span class="label">Seu ponto de partida</span>
+    <div class="row between"><div><span class="small muted">IMC</span><div class="imc tabular">${imc.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div></div>
+      <span class="pill ${faixa.cor}">${faixa.nome}</span></div>
+    <p class="small">Faixa saudável para ${alturaBR(p.alturaCm)} m: <b class="tabular">${kgBR(min)} a ${kgBR(max)} kg</b>. ${conta}</p>
+  </div>`;
+}
+
+async function concluirBoasVindas() {
   try { await Store.salvarPerfil(uid(), { boasVindas: isoDe(hoje()) }); } catch (err) { toast(mensagemErro(err)); return; }
   S.bv = null;
   irPara('hoje');
@@ -617,11 +634,14 @@ document.addEventListener('submit', async e => {
     let altura = parseFloat($('#bvAltura').value.replace(',', '.'));
     if (altura > 0 && altura < 3) altura *= 100;
     altura = Number.isFinite(altura) ? Math.round(altura) : null;
-    const meta = parseFloat($('#bvMeta').value.replace(',', '.'));
+    const pesoTxt = $('#bvPeso').value.trim();
+    const peso = pesoTxt ? parseFloat(pesoTxt.replace(',', '.')) : null;
     if (altura !== null && (altura < 100 || altura > 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
-    if (Number.isFinite(meta) && (meta < 30 || meta > 250)) return toast('A meta precisa estar entre 30 e 250 kg.');
+    if (peso !== null && !(peso >= 20 && peso <= 300)) return toast('Digite o peso em kg, por exemplo 72,5.');
     try {
-      await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), alturaCm: altura, metaPeso: Number.isFinite(meta) ? meta : null });
+      await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), alturaCm: altura });
+      // O peso de hoje vira o primeiro registro do gráfico (e o ponto de partida do IMC)
+      if (peso !== null) await Store.salvarPeso(uid(), isoDe(hoje()), peso);
     } catch (err) { return toast(mensagemErro(err)); }
     S.bv = { passo: 2, modelo: S.bv?.modelo ?? 'abc' };
     render();

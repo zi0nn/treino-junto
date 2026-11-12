@@ -142,7 +142,7 @@ Garante que só o seu site use o seu Firebase (ninguém consegue gastar a sua co
 
 ### 8.3 O que já vem pronto no app
 - **Confirmação de e-mail** no cadastro (quem entra com Google já vem confirmado).
-- **Primeiro acesso guiado:** nome, altura, meta, modelo de treino e código de conexão.
+- **Primeiro acesso guiado:** nome, altura e peso atual (já mostra o IMC e a faixa saudável), modelo de treino e código de conexão.
 - **Página de privacidade** (`privacidade.html`), com link no login e em Perfil › Dados.
 - **Apagar minha conta** em Perfil › Dados: apaga tudo na hora (exige digitar APAGAR e a senha).
 - **Mandar sugestão** em Perfil › Dados. As sugestões chegam como aviso para a conta dona do script e ficam na aba **Sugestões** do backup e no Firestore (coleção `sugestoes`).
