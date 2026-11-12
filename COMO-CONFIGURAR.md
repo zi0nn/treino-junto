@@ -155,15 +155,15 @@ Garante que só o seu site use o seu Firebase (ninguém consegue gastar a sua co
 |---|---|---|
 | 1 | Login, perfil, plano da semana, checklist do dia | ✅ pronta |
 | 2 | Código de conexão, quem acompanha, permissões | ✅ pronta |
-| 3 | Check-in com foto, reações e recados | ✅ pronta |
+| 3 | Check-in com foto e reações (o chat de recados foi tirado depois) | ✅ pronta |
 | 4 | Notificações (Apps Script + Firebase Cloud Messaging) | ✅ pronta |
 | 5 | Peso, gráfico e frequência | ✅ pronta |
 | 6 | IMC, medidas do corpo, horário do lembrete | ✅ pronta |
 | 7 | Sequência e conquistas, metas do casal, resumo de domingo | ✅ pronta |
 | 8 | Evolução de carga, fotos de antes e depois, backup semanal | ✅ pronta |
 | A | Menu em 5 abas, editar exercício, cronômetro de descanso, modelos, histórico, confirmação de e-mail | ✅ pronta |
-| B | Primeiro acesso, login com Google, apagar conta, privacidade, App Check, sugestões | em teste |
-| C | Sequência do casal, cartão para compartilhar, calendário do ano | |
+| B | Primeiro acesso, login com Google, apagar conta, privacidade, sugestões (App Check pausado) | ✅ pronta |
+| C | Sequência do casal, cartão para compartilhar, calendário do ano (e o chat de recados saiu) | ✅ pronta |
 | D | Testes automáticos das regras, organizar o código | |
 
 ### Backup semanal

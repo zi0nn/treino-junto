@@ -26,7 +26,7 @@ const REACOES = ['💪', '🔥', '❤️', '👏'];
 // ---------- Chamado pelo app ----------
 // { idToken, evento: 'checkin', checkinId }
 // { idToken, evento: 'reacao', atleta, checkinId }
-// { idToken, evento: 'recado', conexaoId, texto }
+// (recados foram tirados do app; o evento 'recado' é ignorado)
 
 function doPost(e) {
   try {
@@ -36,7 +36,7 @@ function doPost(e) {
 
     if (dados.evento === 'checkin') avisarCheckin(uid, String(dados.checkinId || ''));
     else if (dados.evento === 'reacao') avisarReacao(uid, String(dados.atleta || ''), String(dados.checkinId || ''));
-    else if (dados.evento === 'recado') avisarRecado(uid, String(dados.conexaoId || ''), String(dados.texto || ''));
+    else if (dados.evento === 'recado') return responder({ ok: true }); // recados foram tirados do app
     else if (dados.evento === 'conquista') avisarConquista(uid, String(dados.id || ''), String(dados.nome || '').slice(0, 40));
     else if (dados.evento === 'metaBatida') avisarMetaBatida(uid, String(dados.conexaoId || ''));
     else if (dados.evento === 'sugestao') avisarSugestao(uid, String(dados.tipo || ''));
@@ -185,7 +185,7 @@ function resumoSemanal(pessoas, conexoes) {
       conexoes.filter(c => c.atleta === u.id && c.perm && (c.perm.treinos || c.perm.checkins)).forEach(c => {
         if (!querAviso(c.viewer, 'resumo', porId[c.viewer])) return;
         notificar(c.viewer, 'Semana de ' + (u.nome || 'quem você acompanha') + ': ' + treinosTxt,
-          (c.perm.peso ? pesoTxt.replace(' · ', '') : '') || 'Manda um recado de parabéns ou de força!',
+          (c.perm.peso ? pesoTxt.replace(' · ', '') : '') || 'Reaja ao próximo check-in para dar força!',
           SITE_URL + '#acompanhar', 'resumo-' + u.id);
       });
     } catch (err) {

@@ -11,7 +11,7 @@
      users/{uid}/checkins/{id}    → { data, hora, legenda, temFoto, criadoEm, reacoes: { uidDeQuemReagiu: emoji } }
      users/{uid}/fotos/{id}       → { img }   foto do check-in (JPEG reduzido, em texto). Fica separada
                                     para a lista de check-ins carregar rápido e a foto só quando aparece.
-     conexoes/{id}/mensagens/{id} → { de, texto, criadoEm }   recados entre as duas pessoas conectadas
+     conexoes/{id}/mensagens/{id} → recados antigos (o chat foi tirado do app; só são apagados com a conta)
      users/{uid}/pesos/{data}     → { kg, criadoEm }   um registro de peso por dia
      users/{uid}/medidas/{data}   → { cintura, quadril, braco, criadoEm }   em cm (privado, só a dona vê)
      users/{uid}.alturaCm         → altura para o IMC (também copiada nas conexões em que ela é atleta)
@@ -280,18 +280,6 @@ export async function apagarCheckin(uid, id) {
 export const reagir = (donoUid, checkinId, meuUid, emoji) =>
   updateDoc(doc(db, 'users', donoUid, 'checkins', checkinId), { [`reacoes.${meuUid}`]: emoji || deleteField() });
 
-// ---------- Recados ----------
-
-export function escutarMensagens(conexaoId, callback, onError) {
-  const q = query(collection(db, 'conexoes', conexaoId, 'mensagens'), orderBy('criadoEm', 'desc'), limit(30));
-  return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) })).reverse());
-  }, onError);
-}
-
-export const enviarMensagem = (conexaoId, meuUid, texto) =>
-  addDoc(collection(db, 'conexoes', conexaoId, 'mensagens'), { de: meuUid, texto: String(texto).slice(0, 300), criadoEm: serverTimestamp() });
-
 // ---------- Peso ----------
 
 export function escutarPesos(uid, callback, onError) {
@@ -367,7 +355,7 @@ async function apagarColecao(caminho) {
 
 // Apaga tudo da pessoa e, por último, o login. progresso(texto) mostra em que passo está.
 export async function apagarTudo(uid, codigo, progresso = () => {}) {
-  progresso('Apagando conexões e recados…');
+  progresso('Apagando conexões…');
   const conexoes = [
     ...(await getDocs(query(collection(db, 'conexoes'), where('atleta', '==', uid)))).docs,
     ...(await getDocs(query(collection(db, 'conexoes'), where('viewer', '==', uid)))).docs,
@@ -391,7 +379,7 @@ export async function apagarTudo(uid, codigo, progresso = () => {}) {
 }
 
 // ---------- Avisos no celular ----------
-// O app registra o aparelho no Firestore e, quando algo acontece (check-in, reação, recado),
+// O app registra o aparelho no Firestore e, quando algo acontece (check-in, reação, conquista),
 // pede ao script de avisos (Google Apps Script) para notificar. O script confere quem pediu
 // e decide sozinho quem recebe, lendo as conexões no banco.
 

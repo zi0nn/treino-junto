@@ -68,7 +68,7 @@ const S = {
   confirmar: null,   // id esperando o segundo toque (remover conexão, apagar check-in)
   checkins: [],      // meus check-ins desta semana
   fotos: {},         // fotos já carregadas: 'uid/idDoCheckin' → dataUrl | null | 'carregando'
-  mensagens: {},     // recados por conexão
+
   checkin: { aberto: false, foto: null, processando: false, enviando: false },
   pesos: [],         // meus registros de peso [{ data, kg }], do mais antigo ao mais novo
   medidas: [],       // minhas medidas [{ data, cintura, quadril, braco }]
@@ -80,8 +80,6 @@ const S = {
 const SEMANAS_HISTORICO = 8;
 let pararEscutas = [];
 let pararAcomp = [];
-let pararMsgs = {};  // escuta de recados por conexão
-const tentativasMsgs = {};
 let cadastrando = false;
 
 // ---------- Navegação: 5 abas, cada uma com subabas ----------
@@ -95,32 +93,17 @@ const ICONE = {
 const ABAS = [
   ['treino', 'Treino', [['hoje', 'Hoje'], ['semana', 'Semana'], ['historico', 'Histórico']]],
   ['corpo', 'Corpo', [['peso', 'Peso e IMC'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]],
-  ['juntos', 'Juntos', [['mural', 'Check-in'], ['recados', 'Recados'], ['acompanhar', 'Acompanhar']]],
+  ['juntos', 'Juntos', [['mural', 'Check-in'], ['acompanhar', 'Acompanhar']]],
   ['evolucao', 'Evolução', [['conquistas', 'Conquistas'], ['frequencia', 'Frequência'], ['cargas', 'Cargas']]],
   ['perfil', 'Perfil', [['dados', 'Dados'], ['conexoes', 'Conexões'], ['avisos', 'Avisos']]],
 ];
 // Endereço (#nome) → [aba, subaba]. Também aceita os nomes antigos usados nos avisos.
-const ROTAS = { progresso: ['evolucao', 'conquistas'], checkin: ['juntos', 'mural'] };
+// (recados foram tirados do app: avisos antigos que apontam para eles abrem o Check-in)
+const ROTAS = { progresso: ['evolucao', 'conquistas'], checkin: ['juntos', 'mural'], recados: ['juntos', 'mural'] };
 ABAS.forEach(([aba, , subs]) => { ROTAS[aba] = [aba, null]; subs.forEach(([s]) => { ROTAS[s] = [aba, s]; }); });
 
-// Recados que chegaram e eu ainda não abri (por conexão)
-function recadosNovos() {
-  let lidos = {};
-  try { lidos = JSON.parse(localStorage.getItem('recados-lidos') || '{}'); } catch { /* sem armazenamento */ }
-  return Object.entries(S.mensagens).reduce((n, [id, msgs]) => {
-    const ult = msgs.at(-1);
-    const quando = ult?.criadoEm?.toMillis?.() || 0;
-    return n + (ult && ult.de !== meuUid() && quando > (lidos[id] || 0) ? 1 : 0);
-  }, 0);
-}
-function marcarRecadosLidos() {
-  const lidos = {};
-  Object.entries(S.mensagens).forEach(([id, msgs]) => { lidos[id] = msgs.at(-1)?.criadoEm?.toMillis?.() || Date.now(); });
-  try { localStorage.setItem('recados-lidos', JSON.stringify(lidos)); } catch { /* sem armazenamento */ }
-}
-
-const contagens = () => ({ conexoes: pedidosRecebidos().length, recados: recadosNovos() });
-const BADGE_DA_ABA = { perfil: 'conexoes', juntos: 'recados' };
+const contagens = () => ({ conexoes: pedidosRecebidos().length });
+const BADGE_DA_ABA = { perfil: 'conexoes' };
 
 function mostrarNav(visivel) {
   $('#nav').hidden = !visivel;
@@ -488,25 +471,6 @@ function prepararFoto(arquivo) {
   });
 }
 
-// ---------- Recados ----------
-function horaMsg(m) {
-  const d = m.criadoEm?.toDate ? m.criadoEm.toDate() : new Date();
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return isoDe(d) === isoDe(hoje()) ? hm : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hm}`;
-}
-
-function secaoRecados(c, outroNome, quantos, rapidos) {
-  const msgs = (S.mensagens[c.id] || []).slice(-quantos);
-  return `<section class="block"><span class="label">Recados com ${esc(outroNome)}</span>
-    ${msgs.length ? `<div class="conversa">${msgs.map(m => `<div class="msg ${m.de === meuUid() ? 'eu' : ''}">${esc(m.texto)}<span class="small muted">${horaMsg(m)}</span></div>`).join('')}</div>`
-      : '<p class="small muted">Nenhum recado ainda.</p>'}
-    <div class="rapidos">${rapidos.map(t => `<button data-rapido="${esc(t)}" data-con="${c.id}">${esc(t)}</button>`).join('')}</div>
-    <form class="row" data-recado="${c.id}">
-      <input id="recadoIn-${c.id}" class="input grow" maxlength="300" placeholder="Escreva um recado" autocomplete="off">
-      <button class="btn sm" type="submit">Enviar</button></form>
-  </section>`;
-}
-
 function telaHoje() {
   const d = hoje();
   const r = resumoSemana();
@@ -521,12 +485,10 @@ function telaHoje() {
   const pedidos = pedidosRecebidos();
   const seq = sequencias(S.plano, S.registros, S.checkins);
   const ckHoje = S.checkins.find(c => c.data === isoDe(d));
-  const novos = recadosNovos();
   return `${cabecalho()}
   ${pedidos.length ? `<section class="block"><div class="card stack aviso">
     <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
     <button class="btn sm" data-aba="conexoes">Ver pedido</button></div></section>` : ''}
-  ${novos ? `<section class="block"><button class="card row atalho" data-aba="recados">💬 <span class="grow">${novos === 1 ? 'Você tem um recado novo' : `Você tem ${novos} recados novos`}</span><span class="link">Ler</span></button></section>` : ''}
   <section class="block">${ckHoje
     ? `<button class="card row atalho" data-aba="mural">✅ <span class="grow">Check-in feito às ${esc(ckHoje.hora)}</span><span class="link">Ver</span></button>`
     : '<button class="btn grande" data-acao="abrir-checkin">📍 Cheguei na academia · fazer check-in</button>'}</section>
@@ -724,7 +686,7 @@ function secaoApagarConta() {
   const google = Store.provedorAtual() === 'google.com';
   return `<section class="block"><div class="card stack perigo-card">
     <h2>Apagar minha conta</h2>
-    <p>Isso apaga <b>para sempre</b>: perfil, treinos, check-ins e fotos, peso, medidas, fotos de antes e depois, conexões, recados e o seu login.
+    <p>Isso apaga <b>para sempre</b>: perfil, treinos, check-ins e fotos, peso, medidas, fotos de antes e depois, conexões, reações e o seu login.
       Quem te acompanha deixa de ver tudo na hora. <b>Não tem como desfazer.</b></p>
     ${a.andamento ? `<p class="small"><b>${esc(a.andamento)}</b></p>` : `
     <form id="formApagar" class="stack">
@@ -786,7 +748,6 @@ const TIPOS_AVISO = [
   ['checkin', 'Quando quem eu acompanho fizer check-in'],
   ['lembrete', 'No horário do lembrete, se quem eu acompanho ainda não treinou'],
   ['meuLembrete', 'No horário do lembrete, se eu ainda não treinei no dia de treino'],
-  ['recados', 'Recados novos'],
   ['reacoes', 'Reações aos meus check-ins'],
   ['conquistas', 'Conquistas e meta do mês de quem eu acompanho'],
   ['resumo', 'Resumo da semana no domingo às 20h'],
@@ -799,7 +760,7 @@ function estadoAvisos() {
   if (!globalThis.Notification) return { pode: false, texto: 'Este navegador não recebe avisos. No Android, use o Chrome.' };
   if (permissao() === 'denied') return { pode: false, texto: 'Os avisos estão bloqueados para este app. Libere nas configurações de notificação do celular e abra o app de novo.' };
   if (permissao() === 'granted') return { pode: true, ativo: true, texto: 'Avisos ligados neste aparelho.' };
-  return { pode: true, ativo: false, texto: 'Receba um aviso quando alguém fizer check-in, reagir ou mandar recado.' };
+  return { pode: true, ativo: false, texto: 'Receba um aviso quando alguém fizer check-in ou reagir à sua foto.' };
 }
 
 function secaoAvisos() {
@@ -824,7 +785,7 @@ function convitAvisos() {
   try { dispensado = localStorage.getItem('avisos-dispensado') === '1'; } catch { /* sem armazenamento */ }
   if (!e.pode || e.ativo || dispensado) return '';
   return `<section class="block"><div class="card stack aviso"><h3>Ative os avisos</h3>
-    <p class="small">Saiba na hora quando alguém reagir ou mandar recado, e receba o lembrete do treino.</p>
+    <p class="small">Saiba na hora quando alguém fizer check-in ou reagir à sua foto, e receba o lembrete do treino.</p>
     <div class="row"><button class="btn ghost" data-acao="dispensar-avisos">Agora não</button><button class="btn" data-acao="ativar-avisos">Ativar</button></div></div></section>`;
 }
 
@@ -1058,20 +1019,171 @@ function gradeConquistas(ctx, guardadas, mostrarBloqueadas) {
   // Por padrão mostra só as próximas 3 a conquistar, para não encher a tela de selos apagados
   const bloqueadas = S.verTodasConquistas ? todasBloqueadas : todasBloqueadas.slice(0, 3);
   if (!lista.length && !bloqueadas.length) return '<p class="small muted">Nenhuma conquista ainda.</p>';
+  // As minhas (guardadas) dá para compartilhar; as de quem eu acompanho, não
   return `<div class="selos">${lista.map(q => `<div class="selo"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b>
-      <span class="small muted">${guardadas?.[q.id] ? dataCurta(guardadas[q.id]) : esc(q.desc)}</span></div>`).join('')}
+      <span class="small muted">${guardadas?.[q.id] ? dataCurta(guardadas[q.id]) : esc(q.desc)}</span>
+      ${guardadas ? `<button class="link compartilhar" data-compartilhar="${q.id}" aria-label="Compartilhar ${esc(q.nome)}">Compartilhar</button>` : ''}</div>`).join('')}
     ${bloqueadas.map(q => `<div class="selo bloqueado"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b><span class="small muted">${esc(q.desc)}</span></div>`).join('')}</div>
     ${todasBloqueadas.length > 3 ? `<button class="link" data-ver-conquistas>${S.verTodasConquistas ? 'Mostrar menos' : `Ver todas as ${CONQUISTAS.length} conquistas`}</button>` : ''}`;
 }
 
-function cartaoSequencia(ctx) {
+function cartaoSequencia(ctx, podeCompartilhar = false) {
   const recorde = ctx.atual >= 2 && ctx.atual >= ctx.recorde ? 'Recorde atual! 🎉' : `Recorde: ${ctx.recorde}`;
   const semanas = ctx.semanasSeguidas ? ` · ${ctx.semanasSeguidas} ${ctx.semanasSeguidas === 1 ? 'semana completa' : 'semanas completas seguidas'}` : '';
   return `<div class="card row sequencia">
     <div class="fogo" aria-hidden="true">🔥</div>
     <div class="grow"><b class="tabular">${ctx.atual} ${ctx.atual === 1 ? 'treino seguido' : 'treinos seguidos'}</b>
       <p class="small muted">${recorde}${semanas}</p></div>
+    ${podeCompartilhar && ctx.atual >= 2 ? `<button class="mini ghost" data-compartilhar="sequencia" data-n="${ctx.atual}">Compartilhar</button>` : ''}
   </div>`;
+}
+
+// ---------- Cartão para compartilhar ----------
+// Desenha uma imagem 1080×1350 (bom para WhatsApp e Instagram) e abre o "compartilhar" do celular.
+async function gerarCartao({ emoji, titulo, linha1, linha2 }) {
+  try { await Promise.all([document.fonts.load('800 120px Archivo'), document.fonts.load('500 48px "DM Sans"')]); } catch { /* usa a fonte reserva */ }
+  const W = 1080, H = 1350;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const fundo = g.createLinearGradient(0, 0, W, H);
+  fundo.addColorStop(0, '#0F3D2E'); fundo.addColorStop(1, '#1E7A58');
+  g.fillStyle = fundo; g.fillRect(0, 0, W, H);
+  // Brilho suave atrás do emoji
+  const brilho = g.createRadialGradient(W / 2, 470, 20, W / 2, 470, 380);
+  brilho.addColorStop(0, 'rgba(76,199,154,0.45)'); brilho.addColorStop(1, 'rgba(76,199,154,0)');
+  g.fillStyle = brilho; g.fillRect(0, 0, W, H);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '260px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  g.fillText(emoji, W / 2, 470);
+  g.fillStyle = '#FFFFFF';
+  // Título quebrando em até 2 linhas
+  g.font = '800 104px Archivo, "Arial Narrow", sans-serif';
+  const palavras = titulo.split(' '); const linhas = [''];
+  palavras.forEach(p => { const t = (linhas.at(-1) + ' ' + p).trim(); if (g.measureText(t).width > W - 160 && linhas.at(-1)) linhas.push(p); else linhas[linhas.length - 1] = t; });
+  linhas.slice(0, 2).forEach((l, i) => g.fillText(l, W / 2, 800 + i * 116));
+  const y = 800 + Math.min(linhas.length, 2) * 116 + 30;
+  g.font = '500 50px "DM Sans", system-ui, sans-serif';
+  g.fillStyle = 'rgba(255,255,255,0.88)';
+  if (linha1) g.fillText(linha1, W / 2, y);
+  if (linha2) g.fillText(linha2, W / 2, y + 70);
+  g.font = '800 44px Archivo, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.fillText('TREINO JUNTO', W / 2, H - 120);
+  g.font = '500 34px "DM Sans", sans-serif'; g.fillStyle = 'rgba(255,255,255,0.7)';
+  g.fillText(hoje().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }), W / 2, H - 68);
+  return new Promise(r => c.toBlob(r, 'image/png'));
+}
+
+async function compartilharCartao(dados) {
+  const blob = await gerarCartao(dados);
+  const arquivo = new File([blob], 'treino-junto.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare?.({ files: [arquivo] })) {
+      await navigator.share({ files: [arquivo], text: `${dados.emoji} ${dados.titulo} · Treino Junto` });
+      return;
+    }
+  } catch (err) { if (err.name === 'AbortError') return; }
+  // Sem "compartilhar" (computador): baixa a imagem
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'treino-junto.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast('Imagem salva. Agora é só postar 📸');
+}
+
+// O que vai no cartão de cada coisa que dá para compartilhar
+function dadosDoCartao(b) {
+  const nome = (S.perfil?.nome || '').split(' ')[0];
+  if (b.dataset.compartilhar === 'casal') {
+    const n = +b.dataset.n;
+    return { emoji: '🔥', titulo: `${n} ${n === 1 ? 'dia' : 'dias'} treinando juntos`, linha1: `${nome} + ${b.dataset.nome}`, linha2: 'Um puxa o outro 💪' };
+  }
+  if (b.dataset.compartilhar === 'sequencia') {
+    const n = +b.dataset.n;
+    return { emoji: '🔥', titulo: `${n} ${n === 1 ? 'treino seguido' : 'treinos seguidos'}`, linha1: nome, linha2: 'Sem faltar nenhum dia de treino' };
+  }
+  const q = CONQUISTAS.find(x => x.id === b.dataset.compartilhar);
+  return q ? { emoji: q.icone, titulo: q.nome, linha1: `${nome} conquistou`, linha2: q.desc } : null;
+}
+
+// ---------- Calendário do ano (um quadradinho por dia, 52 semanas) ----------
+function calendarioAno() {
+  const hojeIso = isoDe(hoje());
+  const primeiro = diasTreinados(S.registros, S.checkins)[0];
+  const inicio = new Date(semanaAtual()[0]); inicio.setDate(inicio.getDate() - 7 * 52);
+  const semanas = [];
+  const porMes = {};
+  let total = 0;
+  for (let w = 0; w < 53; w++) {
+    const dias = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(inicio); d.setDate(inicio.getDate() + w * 7 + i);
+      const iso = isoDe(d);
+      let st = iso > hojeIso ? 'futuro' : !primeiro || iso < primeiro ? 'antes' : statusDia(d);
+      if (st === 'future') st = 'futuro';
+      if (st === 'done') { total++; porMes[iso.slice(0, 7)] = (porMes[iso.slice(0, 7)] || 0) + 1; }
+      dias.push({ iso, d, st });
+    }
+    semanas.push(dias);
+  }
+  const melhor = Object.entries(porMes).sort((a, b) => b[1] - a[1])[0];
+  const nomeMesAbrev = d => d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  const rotulos = semanas.map((s, i) => (i === 0 || s[0].d.getMonth() !== semanas[i - 1][0].d.getMonth()) ? nomeMesAbrev(s[0].d) : '');
+  // Rola até o fim (hoje) depois de desenhar
+  setTimeout(() => { const el = document.getElementById('anoScroll'); if (el) el.scrollLeft = el.scrollWidth; }, 0);
+  return `<section class="block"><div class="row between"><span class="label">Últimos 12 meses</span>
+      <span class="small muted tabular">${total} ${total === 1 ? 'dia' : 'dias'} de treino</span></div>
+    <div class="card">
+      <div class="ano-scroll" id="anoScroll" role="img" aria-label="${total} dias de treino nos últimos 12 meses">
+        <div class="ano">
+          ${rotulos.map((r, i) => `<span class="ano-mes" style="grid-column:${i + 2}">${r}</span>`).join('')}
+          ${['S', '', 'Q', '', 'S', '', 'D'].map((l, i) => `<span class="ano-dow" style="grid-row:${i + 2}">${l}</span>`).join('')}
+          ${semanas.map((s, w) => s.map((dia, i) => `<i class="q ${dia.st}" style="grid-column:${w + 2};grid-row:${i + 2}" title="${dataCurta(dia.iso)}"></i>`).join('')).join('')}
+        </div>
+      </div>
+      <div class="legend" style="margin-top:10px"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot-soft);border:1px solid var(--hot)"></i>Faltou</span><span><i style="background:var(--line)"></i>Descanso</span></div>
+    </div>
+    ${melhor ? `<p class="small muted">Mês mais forte: <b>${new Date(melhor[0] + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b>, com ${melhor[1]} ${melhor[1] === 1 ? 'dia' : 'dias'} de treino.</p>` : ''}
+  </section>`;
+}
+
+// ---------- Sequência do casal ----------
+// Conta os dias em que os dois treinaram; falta de qualquer um zera; descanso de um não quebra.
+function sequenciaCasal(eu, ela) {
+  const diasEu = diasTreinados(eu.registros, eu.checkins), diasEla = diasTreinados(ela.registros, ela.checkins);
+  if (!diasEu.length || !diasEla.length) return { atual: 0, recorde: 0, mes: 0 };
+  const hojeIso = isoDe(hoje()), mes = hojeIso.slice(0, 7);
+  const inicio = diasEu[0] > diasEla[0] ? diasEu[0] : diasEla[0];
+  let corrente = 0, recorde = 0, noMes = 0;
+  const d = diaDe(inicio);
+  while (isoDe(d) <= hojeIso) {
+    const a = statusDia(d, eu.plano, eu.registros, eu.checkins), b = statusDia(d, ela.plano, ela.registros, ela.checkins);
+    if (a === 'done' && b === 'done') {
+      corrente++; recorde = Math.max(recorde, corrente);
+      if (isoDe(d).startsWith(mes)) noMes++;
+    } else if (a === 'missed' || b === 'missed') corrente = 0;
+    d.setDate(d.getDate() + 1);
+  }
+  return { atual: corrente, recorde, mes: noMes };
+}
+
+function cartaoSequenciaCasal(atual, A, checkins) {
+  if (!atual?.perm?.treinos || !A?.temPlano || !A?.temRegistros || A.bloqTreinos) return '';
+  const nome = nomeDe(atual, 'atleta');
+  const s = sequenciaCasal(
+    { plano: S.plano, registros: S.registros, checkins: S.checkins },
+    { plano: A.plano, registros: A.registros, checkins },
+  );
+  // Ela também me acompanha? Se não, só eu vejo este cartão
+  const elaMeVe = S.conexoes.some(c => c.atleta === meuUid() && c.viewer === atual.atleta && c.status === 'aceita' && c.perm?.treinos);
+  return `<section class="block"><span class="label">Vocês dois</span>
+    <div class="card stack casal">
+      <div class="row"><div class="fogo" aria-hidden="true">🔥</div>
+        <div class="grow"><b class="tabular">${s.atual} ${s.atual === 1 ? 'dia' : 'dias'} treinando juntos</b>
+          <p class="small muted">Recorde: ${s.recorde} · ${s.mes} ${s.mes === 1 ? 'dia' : 'dias'} juntos neste mês</p></div>
+        ${s.atual ? `<button class="mini ghost" data-compartilhar="casal" data-nome="${esc(nome)}" data-n="${s.atual}" aria-label="Compartilhar a sequência de vocês">Compartilhar</button>` : ''}</div>
+      <p class="small muted">Conta quando os dois treinam no mesmo dia. Se alguém falta num dia de treino, recomeça; descanso não atrapalha.</p>
+      ${elaMeVe ? '' : `<p class="small">Para ${esc(nome)} ver isso também, ela(e) precisa te acompanhar: passe o seu código (Perfil › Conexões).</p>`}
+    </div></section>`;
 }
 
 // Quando aparece conquista nova, guarda no perfil e avisa quem acompanha (uma vez só)
@@ -1346,7 +1458,7 @@ function telaConquistas() {
   const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil?.alturaCm);
   const qtd = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id] || q.ok(ctx)).length;
   return `${cabecalho()}
-  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
+  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx, true)}</section>
   <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
     ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>`;
 }
@@ -1365,7 +1477,8 @@ function telaFrequencia() {
   <section class="block"><div class="row between"><span class="label">Treinos por semana</span>
     ${semanas.length ? `<span class="small muted tabular">média ${media.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por semana</span>` : ''}</div>
     <div class="card">${graficoFrequencia('minhaFreq', semanas)}</div>
-  </section>`;
+  </section>
+  ${calendarioAno()}`;
 }
 const telaCargas = () => cabecalho() + secaoCargas();
 
@@ -1408,7 +1521,7 @@ function telaMural() {
       const deHoje = checkins.filter(c => c.data === hojeIso);
       deQuemAcompanho = deHoje.length ? deHoje.map(c => cartaoCheckin(atual.atleta, c, true)).join('')
         : `<div class="card stack"><h3>${esc(nome)} ainda não fez check-in hoje</h3>
-            <p class="small muted">Que tal mandar um recado de incentivo?</p><button class="btn sm ghost" data-aba="recados">Mandar recado</button></div>
+            <p class="small muted">Quando fizer, aparece aqui para você reagir.</p></div>
           ${checkins[0] ? `<span class="label">Último check-in de ${esc(nome)}</span>${cartaoCheckin(atual.atleta, checkins[0], true)}` : ''}`;
     }
   }
@@ -1418,19 +1531,10 @@ function telaMural() {
   ].join('');
   return `${cabecalho()}
   ${secaoCheckinHoje()}
+  ${cartaoSequenciaCasal(atual, A, checkins)}
   ${atual ? `<section class="block"><span class="label">${esc(nome)} hoje</span>${chipsAcomp(aceitas, atual)}${deQuemAcompanho}</section>` : ''}
   ${metas}
   ${!atual && !meusAcompanhantes().length ? semConexao('Conecte-se com quem você quer incentivar (ou com quem vai te incentivar) para ver os check-ins um do outro, reagir e combinar metas.') : ''}`;
-}
-
-// Recados: uma conversa para cada conexão aceita, dos dois lados
-function telaRecados() {
-  const conversas = S.conexoes.filter(c => c.status === 'aceita');
-  setTimeout(() => { marcarRecadosLidos(); mostrarNav(true); }, 0);
-  if (!conversas.length) return cabecalho() + semConexao('Depois de conectar com alguém, vocês trocam recados por aqui.');
-  return cabecalho() + conversas.map(c => c.atleta === meuUid()
-    ? secaoRecados(c, nomeDe(c, 'viewer'), 20, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕', 'Treino feito! 💪'])
-    : secaoRecados(c, nomeDe(c, 'atleta'), 20, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])).join('');
 }
 
 // Acompanhar: treino, semana, sequência, conquistas e peso de quem eu acompanho
@@ -1473,6 +1577,7 @@ function telaAcompanhar() {
 
   return `${cabecalho()}
   <section class="block"><span class="label">Acompanhando</span><h2>${esc(nome)}</h2>${chipsAcomp(aceitas, atual)}</section>
+  ${cartaoSequenciaCasal(atual, A, checkins)}
   ${corpo}
   ${atual.perm?.treinos && A?.temPlano && A?.temRegistros && !A.bloqTreinos ? (() => {
     const ctx = contextoConquistas(A.plano, A.registros, checkins, A.pesos || [], atual.alturaCm);
@@ -1490,7 +1595,7 @@ function telaAcompanhar() {
 const TELAS = {
   treino: { hoje: () => telaHoje(), semana: () => telaSemana(), historico: () => telaHistorico() },
   corpo: { peso: telaPeso, medidas: telaMedidas, fotos: telaFotos },
-  juntos: { mural: telaMural, recados: telaRecados, acompanhar: telaAcompanhar },
+  juntos: { mural: telaMural, acompanhar: telaAcompanhar },
   evolucao: { conquistas: telaConquistas, frequencia: telaFrequencia, cargas: telaCargas },
   perfil: { dados: telaDados, conexoes: telaConexoes, avisos: telaAvisos },
 };
@@ -1657,7 +1762,6 @@ function comecarEscutas(user) {
       S.conexoes = conexoes;
       if (S.confirmar && !S.confirmar.includes(':') && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
       sincronizarAcomp();
-      sincronizarMensagens();
       render();
       verificarMetas();
     }, erro),
@@ -1708,25 +1812,6 @@ function sincronizarAcomp() {
 // É o que permite calcular sequências, conquistas e a meta do mês.
 const inicioHistorico = () => '2000-01-01';
 
-// Uma escuta de recados para cada conexão aceita
-function sincronizarMensagens() {
-  const ids = new Set(S.conexoes.filter(c => c.status === 'aceita').map(c => c.id));
-  for (const id of Object.keys(pararMsgs)) {
-    if (!ids.has(id)) { pararMsgs[id](); delete pararMsgs[id]; delete S.mensagens[id]; }
-  }
-  for (const id of ids) {
-    if (pararMsgs[id]) continue;
-    pararMsgs[id] = Store.escutarMensagens(id, msgs => { S.mensagens[id] = msgs; render(); }, err => {
-      // Logo depois de aceitar, o banco pode ainda não ter liberado: tenta de novo em instantes
-      console.warn('Recados indisponíveis', err);
-      tentativasMsgs[id] = (tentativasMsgs[id] || 0) + 1;
-      if (tentativasMsgs[id] > 5) return; // desiste: provavelmente as regras não foram publicadas
-      delete pararMsgs[id];
-      setTimeout(() => { if (S.user) sincronizarMensagens(); }, 3000);
-    });
-  }
-}
-function pararMensagens() { Object.values(pararMsgs).forEach(f => f()); pararMsgs = {}; S.mensagens = {}; }
 
 if (Store.configurado) {
   // Voltando do login do Google pelo redirecionamento: mostra o erro, se houver
@@ -1737,7 +1822,7 @@ if (Store.configurado) {
     S.fotosProg = undefined; S.fotoAntes = S.fotoDepois = S.exSel = null; S.fotoProgEnviando = false;
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
-    pararDeAcompanhar(); pararMensagens();
+    pararDeAcompanhar();
     // Só carrega os dados depois que o e-mail foi confirmado (as regras do banco também exigem)
     if (user?.verificado) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
     // Mantém o registro do aparelho atualizado (o código do aparelho pode mudar com o tempo)
@@ -1809,7 +1894,7 @@ document.addEventListener('click', e => {
   }
   if (b.dataset.acomp) { S.acompId = b.dataset.acomp; sincronizarAcomp(); render(); return; }
 
-  // Check-ins e recados
+  // Check-ins e reações
   if (b.dataset.apagarCk) {
     const chave = 'ck:' + b.dataset.apagarCk;
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
@@ -1822,6 +1907,11 @@ document.addEventListener('click', e => {
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
     S.confirmar = null;
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
+    return;
+  }
+  if (b.dataset.compartilhar) {
+    const dados = dadosDoCartao(b);
+    if (dados) compartilharCartao(dados).catch(err => { console.error(err); toast('Não deu para gerar a imagem.'); });
     return;
   }
   if (b.dataset.diaHist) { S.diaHist = b.dataset.diaHist; render(); return; }
@@ -1888,7 +1978,6 @@ document.addEventListener('click', e => {
     }, err => toast(mensagemErro(err)));
     return;
   }
-  if (b.dataset.rapido) { enviarRecado(b.dataset.con, b.dataset.rapido); return; }
 
   if (b.dataset.marcar) {
     const id = b.dataset.marcar, data = isoDe(hoje());
@@ -1972,13 +2061,6 @@ async function usarModelo(m) {
   } catch (err) { console.error(err); toast(mensagemErro(err)); }
 }
 
-async function enviarRecado(conexaoId, texto, mostrarToast = true) {
-  try {
-    await Store.enviarMensagem(conexaoId, uid(), texto);
-    if (mostrarToast) toast('Recado enviado');
-    Store.avisar({ evento: 'recado', conexaoId, texto });
-  } catch (err) { console.error(err); toast(mensagemErro(err)); }
-}
 
 async function enviarCheckin() {
   const ck = S.checkin;
@@ -2159,7 +2241,7 @@ document.addEventListener('submit', async e => {
     } catch (err) { return mostrar(mensagemErro(err)); }
     const codigo = S.perfil?.codigo;
     S.apagando = true; // evita recriar o perfil enquanto apaga
-    pararEscutas.forEach(fn => fn()); pararEscutas = []; pararDeAcompanhar(); pararMensagens(); pararDescanso();
+    pararEscutas.forEach(fn => fn()); pararEscutas = []; pararDeAcompanhar(); pararDescanso();
     try {
       await Store.apagarTudo(uid(), codigo, texto => { S.apagar = { andamento: texto }; render(); });
       try { localStorage.clear(); } catch { /* ok */ }
@@ -2220,14 +2302,6 @@ document.addEventListener('submit', async e => {
     return;
   }
 
-  if (f.dataset.recado) {
-    const input = document.getElementById(`recadoIn-${f.dataset.recado}`);
-    const texto = input?.value.trim();
-    if (!texto) return;
-    input.value = '';
-    await enviarRecado(f.dataset.recado, texto, false);
-    return;
-  }
 
   if (f.id === 'formConexao') {
     $('#conexaoBtn').disabled = true; $('#conexaoErro').hidden = true;
@@ -2265,7 +2339,7 @@ document.addEventListener('submit', async e => {
   }
 });
 
-// ---------- Abrir na tela certa (ex.: tocar no aviso de recado abre os Recados) ----------
+// ---------- Abrir na tela certa (ex.: tocar no aviso de check-in abre o Check-in) ----------
 function rotaDoEndereco(endereco) {
   const nome = String(endereco || '').split('#')[1];
   return nome && ROTAS[nome] ? nome : null;

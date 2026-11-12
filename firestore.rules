@@ -203,19 +203,14 @@ service cloud.firestore {
       // Qualquer um dos dois pode desfazer a conexão (recusar, remover ou parar de acompanhar)
       allow delete: if ehParte();
 
-      // Recados: só as duas pessoas da conexão, e só depois do pedido aceito
+      // Recados antigos (o chat foi tirado do app): ninguém cria mais; só dá para ler e apagar
+      // (o "Apagar minha conta" limpa as conversas que sobraram)
       match /mensagens/{msg} {
         function conectados() {
           let c = get(/databases/$(database)/documents/conexoes/$(id)).data;
           return logado() && c.status == 'aceita' && (c.atleta == request.auth.uid || c.viewer == request.auth.uid);
         }
         allow read: if conectados();
-        allow create: if conectados()
-          && request.resource.data.keys().hasOnly(['de', 'texto', 'criadoEm'])
-          && request.resource.data.de == request.auth.uid
-          && request.resource.data.texto is string
-          && request.resource.data.texto.size() > 0 && request.resource.data.texto.size() <= 300;
-        // Cada um apaga os próprios recados; ao apagar a conta, a pessoa apaga a conversa inteira
         allow delete: if logado() && (resource.data.de == request.auth.uid
           || get(/databases/$(database)/documents/conexoes/$(id)).data.atleta == request.auth.uid
           || get(/databases/$(database)/documents/conexoes/$(id)).data.viewer == request.auth.uid);
