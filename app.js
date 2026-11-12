@@ -176,7 +176,8 @@ function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.registros,
       return `<div class="ex ${ok ? 'ok' : ''}">
         ${editavel ? `<button class="chk" data-marcar="${e.id}" aria-pressed="${ok}" aria-label="${ok ? 'Desmarcar' : 'Marcar'} ${esc(e.nome)}">${ok ? '✓' : ''}</button>`
           : `<span class="chk" aria-label="${ok ? 'Feito' : 'Não feito'}">${ok ? '✓' : ''}</span>`}
-        <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div></div>`;
+        <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div>
+        ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : registros[data]?.cargas?.[e.id] ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
     }).join('')}</div></div>`;
 }
 const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga)].filter(Boolean).join(' · ');
@@ -516,6 +517,84 @@ function graficoLinha(id, pesos, meta, unidade, nome) {
   <p class="small dica tabular"><b>${kgBR(p.kg)} ${unidade}</b> em ${dataCurta(p.data)}${sel > 0 ? ` · ${variacao(p.kg - pesos[sel - 1].kg, unidade)} desde o registro anterior` : ''}</p>`;
 }
 const variacao = (d, unidade = 'kg') => Math.abs(d) < 0.05 ? 'igual' : `${d < 0 ? '−' : '+'}${kgBR(Math.abs(d))} ${unidade}`;
+
+// ---------- Evolução de carga ----------
+
+// Todas as cargas anotadas, por nome do exercício: { 'Agachamento livre': [{ data, kg }] }
+function historicoCargas(registros) {
+  const porNome = {};
+  Object.keys(registros).sort().forEach(data => {
+    Object.values(registros[data]?.cargas || {}).forEach(c => {
+      if (!c?.nome || !Number.isFinite(c.kg)) return;
+      const lista = porNome[c.nome] ||= [];
+      const mesmoDia = lista.find(p => p.data === data);
+      if (mesmoDia) mesmoDia.kg = Math.max(mesmoDia.kg, c.kg); else lista.push({ data, kg: c.kg });
+    });
+  });
+  return porNome;
+}
+
+// Campo de carga ao lado do exercício: sugere a última carga usada (ou a do plano)
+function campoCarga(e, kgHoje) {
+  const ultima = historicoCargas(S.registros)[e.nome]?.at(-1)?.kg;
+  const doPlano = parseFloat(String(e.carga || '').replace(',', '.'));
+  const sugestao = ultima ?? (Number.isFinite(doPlano) ? doPlano : null);
+  return `<label class="carga"><span class="sr">Carga usada em ${esc(e.nome)} (kg)</span>
+    <input id="carga-${e.id}" data-carga="${e.id}" data-nome="${esc(e.nome)}" type="text" inputmode="decimal" maxlength="5" autocomplete="off"
+      value="${kgHoje != null ? kgBR(kgHoje) : ''}" placeholder="${sugestao != null ? kgBR(sugestao) : 'kg'}"><span class="small muted">kg</span></label>`;
+}
+
+function secaoCargas() {
+  const hist = historicoCargas(S.registros);
+  const nomes = Object.keys(hist).sort((a, b) => hist[b].length - hist[a].length || a.localeCompare(b));
+  if (!nomes.length) {
+    return `<section class="block"><span class="label">Evolução de carga</span>
+      <p class="small muted">Na tela Hoje, anote ao lado de cada exercício a carga que usou. Aqui aparece como ela foi subindo.</p></section>`;
+  }
+  const sel = hist[S.exSel] ? S.exSel : nomes[0];
+  const pts = hist[sel];
+  const ini = pts[0].kg, fim = pts.at(-1).kg, dif = fim - ini;
+  return `<section class="block"><span class="label">Evolução de carga</span>
+    <div class="chips">${nomes.map(n => `<button class="chip ${n === sel ? 'on' : ''}" data-ex-sel="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+    ${pts.length > 1 ? `<p class="small">De <b class="tabular">${kgBR(ini)} kg</b> para <b class="tabular">${kgBR(fim)} kg</b> desde ${dataCurta(pts[0].data)}${ini > 0 && dif > 0 ? ` <span class="pill ok">+${Math.round(100 * dif / ini)}%</span>` : ''}</p>` : ''}
+    <div class="card">${graficoLinha('carga-' + sel, pts, null, 'kg', 'carga')}</div>
+  </section>`;
+}
+
+// ---------- Fotos de antes e depois ----------
+
+async function carregarFotosProgresso() {
+  if (S.fotosProg !== undefined) return;
+  S.fotosProg = null; // carregando
+  try { S.fotosProg = await Store.lerFotosProgresso(uid()); } catch (err) { console.error(err); S.fotosProg = []; toast(mensagemErro(err)); }
+  render();
+}
+
+// Peso registrado mais perto (antes ou no dia) da foto, para mostrar junto
+const pesoNoDia = data => S.pesos.filter(p => p.data <= data).at(-1);
+
+function secaoFotosProgresso() {
+  if (S.fotosProg === undefined) setTimeout(carregarFotosProgresso, 0);
+  const fotos = S.fotosProg || [];
+  const antes = fotos.find(f => f.data === S.fotoAntes) || fotos[0];
+  const depois = fotos.find(f => f.data === S.fotoDepois) || fotos.at(-1);
+  const legenda = f => { const p = pesoNoDia(f.data); return `${dataCurta(f.data)}${p ? ` · ${kgBR(p.kg)} kg` : ''}`; };
+  const opcoes = atual => fotos.map(f => `<option value="${f.data}" ${f.data === atual.data ? 'selected' : ''}>${dataCurta(f.data)}/${f.data.slice(2, 4)}</option>`).join('');
+  return `<section class="block"><div class="row between"><span class="label">Fotos de antes e depois</span><span class="pill ok">🔒 Só você vê</span></div>
+    ${S.fotosProg === null ? '<p class="muted">Carregando fotos…</p>' : ''}
+    ${fotos.length >= 2 ? `<div class="comparar">
+        <figure><img src="${antes.img}" alt="Foto de ${dataCurta(antes.data)}"><figcaption>
+          <select id="fotoAntesSel" class="input" aria-label="Foto da esquerda">${opcoes(antes)}</select><span class="small muted">${legenda(antes)}</span></figcaption></figure>
+        <figure><img src="${depois.img}" alt="Foto de ${dataCurta(depois.data)}"><figcaption>
+          <select id="fotoDepoisSel" class="input" aria-label="Foto da direita">${opcoes(depois)}</select><span class="small muted">${legenda(depois)}</span></figcaption></figure>
+      </div>` : fotos.length === 1 ? `<figure class="unica"><img src="${fotos[0].img}" alt="Foto de ${dataCurta(fotos[0].data)}"><figcaption class="small muted">${legenda(fotos[0])} · tire a próxima daqui a um mês para comparar</figcaption></figure>` : ''}
+    <label class="drop" for="fotoProgIn">${S.fotoProgEnviando ? '<b>Salvando…</b>'
+      : '<b>Adicionar foto de hoje</b><span class="small muted">Mesma pose, mesmo lugar e mesma luz a cada mês: a comparação fica justa.</span>'}</label>
+    <input id="fotoProgIn" type="file" accept="image/*" hidden>
+    ${fotos.length ? `<div class="miniaturas">${fotos.map(f => `<div><img src="${f.img}" alt="Foto de ${dataCurta(f.data)}"><span class="small tabular">${dataCurta(f.data)}</span>
+      <button class="link" data-apagar-foto-prog="${f.data}">${S.confirmar === 'fp:' + f.data ? 'Confirmar' : 'Apagar'}</button></div>`).join('')}</div>` : ''}
+  </section>`;
+}
 
 // ---------- Sequência e conquistas ----------
 
@@ -876,6 +955,8 @@ function telaProgresso() {
     <p class="small muted">Quem te acompanha só vê seu peso e IMC se você ligar "Ver meu peso" no Perfil.</p>
   </section>
   ${secaoMedidas()}
+  ${secaoCargas()}
+  ${secaoFotosProgresso()}
   <section class="block"><div class="row between"><span class="label">Treinos por semana</span>
     ${semanas.length ? `<span class="small muted tabular">média ${media.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por semana</span>` : ''}</div>
     <div class="card">${graficoFrequencia('minhaFreq', semanas)}</div>
@@ -1108,6 +1189,7 @@ if (Store.configurado) {
   Store.onAuthChange(user => {
     S.user = user;
     S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {}; S.pesos = []; S.medidas = []; S.dica = {}; S.carregado = {}; S.editandoMeta = null;
+    S.fotosProg = undefined; S.fotoAntes = S.fotoDepois = S.exSel = null; S.fotoProgEnviando = false;
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     pararDeAcompanhar(); pararMensagens();
@@ -1177,6 +1259,16 @@ document.addEventListener('click', e => {
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
     S.confirmar = null;
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
+    return;
+  }
+  if (b.dataset.exSel) { S.exSel = b.dataset.exSel; render(); return; }
+  if (b.dataset.apagarFotoProg) {
+    const data = b.dataset.apagarFotoProg, chave = 'fp:' + data;
+    if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
+    S.confirmar = null;
+    Store.apagarFotoProgresso(uid(), data).then(() => {
+      S.fotosProg = (S.fotosProg || []).filter(f => f.data !== data); render(); toast('Foto apagada');
+    }, err => toast(mensagemErro(err)));
     return;
   }
   if (b.dataset.editarMeta) { S.editandoMeta = b.dataset.editarMeta; render(); return; }
@@ -1285,6 +1377,28 @@ document.addEventListener('change', e => {
     S.checkin.processando = true; S.checkin.foto = null; render();
     prepararFoto(t.files[0]).then(foto => { S.checkin.foto = foto; }, err => toast(err.message))
       .finally(() => { S.checkin.processando = false; render(); });
+    return;
+  }
+  if (t.dataset.carga) {
+    const txt = t.value.trim();
+    const kg = txt ? parseFloat(txt.replace(',', '.')) : null;
+    if (txt && !(kg >= 0 && kg <= 500)) { toast('Digite a carga em kg, por exemplo 22,5.'); return; }
+    salvar(Store.anotarCarga(uid(), isoDe(hoje()), t.dataset.carga, t.dataset.nome, kg), kg === null ? 'Carga apagada' : `Carga anotada: ${kgBR(kg)} kg`);
+    return;
+  }
+  if (t.id === 'fotoAntesSel') { S.fotoAntes = t.value; render(); return; }
+  if (t.id === 'fotoDepoisSel') { S.fotoDepois = t.value; render(); return; }
+  if (t.id === 'fotoProgIn' && t.files?.[0]) {
+    S.fotoProgEnviando = true; render();
+    const data = isoDe(hoje());
+    prepararFoto(t.files[0])
+      .then(img => Store.salvarFotoProgresso(uid(), data, img).then(() => {
+        S.fotosProg = [...(S.fotosProg || []).filter(f => f.data !== data), { data, img }].sort((a, b) => a.data.localeCompare(b.data));
+        S.fotoDepois = data;
+        toast('Foto salva. Só você vê 🔒');
+      }))
+      .catch(err => toast(mensagemErro(err)))
+      .finally(() => { S.fotoProgEnviando = false; render(); });
     return;
   }
   if (t.id === 'horaLembrete') {

@@ -235,12 +235,84 @@ function treinouHoje(uid, hoje) {
   return buscar('users/' + uid, 'checkins', 'data', hoje).length > 0;
 }
 
+// ---------- Backup semanal no Google Drive (toda segunda às 7h) ----------
+// Cria uma planilha com todos os dados na pasta "Treino Junto - Backups" do seu Drive.
+// As fotos não vão (pesariam demais): ficam guardadas no Firebase.
+
+const PASTA_BACKUP = 'Treino Junto - Backups';
+
+function fazerBackup() {
+  const hoje = hojeISO();
+  const pessoas = listar('users').sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+  const nome = {};
+  pessoas.forEach(p => { nome[p.id] = p.nome; });
+  const linhas = { treinos: [], cargas: [], checkins: [], pesos: [], medidas: [], plano: [] };
+
+  pessoas.forEach(p => {
+    const n = p.nome || p.id;
+    listar('users/' + p.id + '/registros').forEach(r => {
+      linhas.treinos.push([n, r.id, (r.feitos || []).length]);
+      Object.keys(r.cargas || {}).forEach(k => linhas.cargas.push([n, r.id, r.cargas[k].nome, r.cargas[k].kg]));
+    });
+    listar('users/' + p.id + '/checkins').forEach(c => linhas.checkins.push([n, c.data, c.hora, c.legenda || '', c.temFoto ? 'sim' : 'não',
+      Object.keys(c.reacoes || {}).map(u => c.reacoes[u] + ' ' + (nome[u] || '')).join(' ')]));
+    listar('users/' + p.id + '/pesos').forEach(x => linhas.pesos.push([n, x.id, x.kg]));
+    listar('users/' + p.id + '/medidas').forEach(x => linhas.medidas.push([n, x.id, x.cintura || '', x.quadril || '', x.braco || '']));
+    const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    listar('users/' + p.id + '/plano').forEach(d => (d.exercicios || []).forEach(e =>
+      linhas.plano.push([n, DIAS[Number(d.id)] || d.id, d.titulo || '', e.nome, e.series || '', e.reps || '', e.carga || ''])));
+  });
+
+  const conexoes = listar('conexoes');
+  const recados = [];
+  conexoes.filter(c => c.status === 'aceita').forEach(c => {
+    listar('conexoes/' + c.id + '/mensagens').forEach(m => recados.push([quando(m.criadoEm), nome[m.de] || '', m.texto]));
+  });
+
+  const porData = (a, b) => (a[0] + a[1] < b[0] + b[1] ? -1 : 1);
+  const planilha = SpreadsheetApp.create('Treino Junto - backup ' + hoje);
+  escreverAba(planilha.getSheets()[0].setName('Pessoas'), ['Nome', 'E-mail', 'Altura (cm)', 'Meta (kg)', 'Lembrete', 'Conquistas'],
+    pessoas.map(p => [p.nome, p.email, p.alturaCm || '', p.metaPeso || '', (p.horaLembrete || HORA_PADRAO) + 'h', Object.keys(p.conquistas || {}).length]));
+  escreverAba(planilha.insertSheet('Treinos'), ['Pessoa', 'Dia', 'Exercícios feitos'], linhas.treinos.sort(porData));
+  escreverAba(planilha.insertSheet('Cargas'), ['Pessoa', 'Dia', 'Exercício', 'Carga (kg)'], linhas.cargas.sort(porData));
+  escreverAba(planilha.insertSheet('Check-ins'), ['Pessoa', 'Dia', 'Hora', 'Legenda', 'Foto', 'Reações'], linhas.checkins.sort(porData));
+  escreverAba(planilha.insertSheet('Peso'), ['Pessoa', 'Dia', 'Peso (kg)'], linhas.pesos.sort(porData));
+  escreverAba(planilha.insertSheet('Medidas'), ['Pessoa', 'Dia', 'Cintura', 'Quadril', 'Braço'], linhas.medidas.sort(porData));
+  escreverAba(planilha.insertSheet('Plano da semana'), ['Pessoa', 'Dia', 'Treino', 'Exercício', 'Séries', 'Reps', 'Carga'], linhas.plano);
+  escreverAba(planilha.insertSheet('Conexões'), ['Quem treina', 'Quem acompanha', 'Situação', 'Vê treinos', 'Vê check-ins', 'Vê peso', 'Meta do mês'],
+    conexoes.map(c => [nome[c.atleta] || c.atletaNome, nome[c.viewer] || c.viewerNome, c.status,
+      c.perm && c.perm.treinos ? 'sim' : 'não', c.perm && c.perm.checkins ? 'sim' : 'não', c.perm && c.perm.peso ? 'sim' : 'não',
+      c.meta ? c.meta.mes + ': ' + c.meta.treinos + ' treinos (' + (c.meta.recompensa || '') + ')' : '']));
+  escreverAba(planilha.insertSheet('Recados'), ['Quando', 'De', 'Texto'], recados.sort());
+
+  DriveApp.getFileById(planilha.getId()).moveTo(pastaDeBackup());
+  console.log('Backup criado: ' + planilha.getUrl());
+  return planilha.getUrl();
+}
+
+const quando = d => (d instanceof Date ? Utilities.formatDate(d, FUSO, 'yyyy-MM-dd HH:mm') : '');
+
+function escreverAba(aba, cabecalho, linhas) {
+  aba.getRange(1, 1, 1, cabecalho.length).setValues([cabecalho])
+    .setFontWeight('bold').setBackground('#1E7A58').setFontColor('#FFFFFF');
+  if (linhas.length) aba.getRange(2, 1, linhas.length, cabecalho.length).setValues(linhas);
+  aba.setFrozenRows(1);
+  aba.autoResizeColumns(1, cabecalho.length);
+}
+
+function pastaDeBackup() {
+  const pastas = DriveApp.getFoldersByName(PASTA_BACKUP);
+  return pastas.hasNext() ? pastas.next() : DriveApp.createFolder(PASTA_BACKUP);
+}
+
 // ---------- Rode UMA vez pelo editor ----------
-// Autoriza o script e liga o lembrete (confere de hora em hora quem escolheu aquele horário)
+// Autoriza o script, liga o lembrete (de hora em hora) e o backup semanal (segunda, 7h)
 function instalarRotinas() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('lembreteDiario').timeBased().everyHours(1).create();
-  console.log('Pronto: lembrete ligado. Cada pessoa recebe no horário que escolheu no app (padrão: ' + HORA_PADRAO + 'h).');
+  ScriptApp.newTrigger('fazerBackup').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).inTimezone(FUSO).create();
+  const url = fazerBackup(); // já deixa o primeiro backup pronto
+  console.log('Pronto: lembrete ligado (padrão ' + HORA_PADRAO + 'h) e backup toda segunda às 7h. Primeiro backup: ' + url);
 }
 
 // Para testar o resumo de domingo em qualquer dia: escolha esta função e clique em Executar

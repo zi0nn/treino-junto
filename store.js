@@ -6,7 +6,7 @@
      users/{uid}                  → { nome, email, codigo, metaPeso, criadoEm }
      users/{uid}/plano/{dia}      → { titulo, exercicios: [{ id, nome, series, reps, carga }] }
                                     dia = 0 (domingo) a 6 (sábado)
-     users/{uid}/registros/{data} → { feitos: [ids dos exercícios], atualizadoEm }
+     users/{uid}/registros/{data} → { feitos: [ids dos exercícios], cargas: { exId: { kg, nome } }, atualizadoEm }
                                     data = 'AAAA-MM-DD'
      users/{uid}/checkins/{id}    → { data, hora, legenda, temFoto, criadoEm, reacoes: { uidDeQuemReagiu: emoji } }
      users/{uid}/fotos/{id}       → { img }   foto do check-in (JPEG reduzido, em texto). Fica separada
@@ -32,7 +32,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, query, where, documentId, onSnapshot, getDoc, orderBy, limit,
+  collection, doc, query, where, documentId, onSnapshot, getDoc, getDocs, orderBy, limit,
   setDoc, updateDoc, deleteDoc, addDoc, writeBatch, deleteField,
   runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -328,6 +328,23 @@ export async function avisar(evento) {
     if (!r.ok) console.warn('Aviso não enviado:', r.erro);
   } catch (err) { console.warn('Aviso não enviado', err); }
 }
+
+// Carga usada num exercício naquele dia (anotar a carga já conta o exercício como feito)
+export const anotarCarga = (uid, data, exId, nome, kg) =>
+  setDoc(doc(db, 'users', uid, 'registros', data), {
+    cargas: { [exId]: kg === null ? deleteField() : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60) } },
+    ...(kg === null ? {} : { feitos: arrayUnion(exId) }),
+    atualizadoEm: serverTimestamp(),
+  }, { merge: true });
+
+// ---------- Fotos de antes e depois (privadas) ----------
+// users/{uid}/fotosProgresso/{data} → { img }. Carregadas só quando a pessoa abre a seção.
+export async function lerFotosProgresso(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'fotosProgresso'));
+  return snap.docs.map(d => ({ data: d.id, img: d.data().img })).sort((a, b) => a.data.localeCompare(b.data));
+}
+export const salvarFotoProgresso = (uid, data, img) => setDoc(doc(db, 'users', uid, 'fotosProgresso', data), { img });
+export const apagarFotoProgresso = (uid, data) => deleteDoc(doc(db, 'users', uid, 'fotosProgresso', data));
 
 export const marcarExercicio = (uid, data, exId, feito) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {

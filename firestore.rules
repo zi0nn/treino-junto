@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Regras de segurança do Treino Junto (etapa 5 + IMC, medidas e horário do lembrete).
+// Regras de segurança do Treino Junto (com cargas e fotos de antes e depois).
 // Copie tudo e cole no Console do Firebase > Firestore Database > Regras > Publicar.
 //
 // Resumo: cada pessoa só altera os próprios dados.
@@ -54,7 +54,17 @@ service cloud.firestore {
         allow read: if eu(uid) || liberado(uid, 'treinos');
         allow delete: if eu(uid);
         allow write: if eu(uid) && data.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-          && request.resource.data.feitos is list && request.resource.data.feitos.size() <= 40;
+          && request.resource.data.keys().hasOnly(['feitos', 'atualizadoEm', 'cargas'])
+          && (!('feitos' in request.resource.data) || (request.resource.data.feitos is list && request.resource.data.feitos.size() <= 40))
+          && (!('cargas' in request.resource.data) || (request.resource.data.cargas is map && request.resource.data.cargas.size() <= 40));
+      }
+
+      // Fotos de antes e depois: privadas, só a dona vê
+      match /fotosProgresso/{data} {
+        allow read, delete: if eu(uid);
+        allow write: if eu(uid) && data.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && request.resource.data.keys().hasOnly(['img'])
+          && request.resource.data.img is string && request.resource.data.img.size() < 900000;
       }
 
       // Check-ins: só a dona cria, edita a legenda e apaga.
