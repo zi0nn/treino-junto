@@ -67,6 +67,8 @@ const S = {
   pesos: [],         // meus registros de peso [{ data, kg }], do mais antigo ao mais novo
   medidas: [],       // minhas medidas [{ data, cintura, quadril, braco }]
   medidaSel: 'cintura',
+  carregado: {},     // quais escutas já responderam (conquistas só são calculadas com tudo carregado)
+  editandoMeta: null,
   dica: {},          // ponto/barra tocado em cada gráfico: { idDoGrafico: índice }
 };
 const SEMANAS_HISTORICO = 8;
@@ -295,6 +297,7 @@ function telaHoje() {
     <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
   ${secaoCheckinHoje()}
   ${convitAvisos()}
+  ${meusAcompanhantes().map(c => cartaoMetaCasal(c, 'atleta', treinosNoMes(S.registros, S.checkins))).join('')}
   ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}
   <section class="block">
     <div class="grid3">
@@ -401,6 +404,8 @@ const TIPOS_AVISO = [
   ['meuLembrete', 'No horário do lembrete, se eu ainda não treinei no dia de treino'],
   ['recados', 'Recados novos'],
   ['reacoes', 'Reações aos meus check-ins'],
+  ['conquistas', 'Conquistas e meta do mês de quem eu acompanho'],
+  ['resumo', 'Resumo da semana no domingo às 20h'],
 ];
 
 // Situação dos avisos neste aparelho, em texto para a pessoa
@@ -458,14 +463,14 @@ const dataCurta = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const diaDe = iso => new Date(iso + 'T12:00');
 
 // Treinos feitos x planejados nas últimas semanas (planejado = plano atual da semana)
-function semanasFrequencia(planoSemana, registros, checkins) {
+function semanasFrequencia(planoSemana, registros, checkins, quantas = SEMANAS_HISTORICO) {
   const inicio = semanaAtual()[0];
   const hojeIso = isoDe(hoje());
   // Só conta a partir da primeira semana com alguma atividade
   const datas = [...Object.keys(registros).filter(d => registros[d]?.feitos?.length), ...checkins.map(c => c.data)].sort();
   const primeira = datas[0] || hojeIso;
   const semanas = [];
-  for (let n = SEMANAS_HISTORICO - 1; n >= 0; n--) {
+  for (let n = quantas - 1; n >= 0; n--) {
     const seg = new Date(inicio); seg.setDate(inicio.getDate() - 7 * n);
     const fim = new Date(seg); fim.setDate(seg.getDate() + 6);
     if (isoDe(fim) < primeira) continue;
@@ -511,6 +516,173 @@ function graficoLinha(id, pesos, meta, unidade, nome) {
   <p class="small dica tabular"><b>${kgBR(p.kg)} ${unidade}</b> em ${dataCurta(p.data)}${sel > 0 ? ` · ${variacao(p.kg - pesos[sel - 1].kg, unidade)} desde o registro anterior` : ''}</p>`;
 }
 const variacao = (d, unidade = 'kg') => Math.abs(d) < 0.05 ? 'igual' : `${d < 0 ? '−' : '+'}${kgBR(Math.abs(d))} ${unidade}`;
+
+// ---------- Sequência e conquistas ----------
+
+// Dias em que treinou (marcou exercício ou fez check-in), sem repetir
+function diasTreinados(registros, checkins) {
+  const dias = new Set(checkins.map(c => c.data));
+  Object.keys(registros).forEach(d => { if (registros[d]?.feitos?.length) dias.add(d); });
+  return [...dias].sort();
+}
+
+// Sequência = dias de treino planejado cumpridos seguidos (descanso não quebra; hoje ainda não conta como falta)
+function sequencias(planoSemana, registros, checkins) {
+  const dias = diasTreinados(registros, checkins);
+  if (!dias.length) return { atual: 0, recorde: 0 };
+  const hojeIso = isoDe(hoje());
+  let atual = 0, recorde = 0, corrente = 0;
+  const d = diaDe(dias[0]);
+  while (isoDe(d) <= hojeIso) {
+    const st = statusDia(d, planoSemana, registros, checkins);
+    if (st === 'done') { corrente++; recorde = Math.max(recorde, corrente); }
+    else if (st === 'missed') corrente = 0;
+    d.setDate(d.getDate() + 1);
+  }
+  atual = corrente;
+  return { atual, recorde };
+}
+
+// Semanas completas seguidas (treinou tudo o que estava planejado), contando a partir da passada
+function semanasCompletas(planoSemana, registros, checkins) {
+  const semanas = semanasFrequencia(planoSemana, registros, checkins, 52);
+  let seguidas = 0, melhor = 0, alguma = false;
+  for (const s of semanas) {
+    const completa = s.planejados > 0 && s.feitos >= s.planejados && (!s.atual || s.planejados === semanaPlanejada(planoSemana));
+    if (s.atual && !completa) continue; // semana atual em andamento não quebra
+    if (completa) { seguidas++; alguma = true; melhor = Math.max(melhor, seguidas); } else seguidas = 0;
+  }
+  return { seguidas, melhor, alguma };
+}
+const semanaPlanejada = planoSemana => [0, 1, 2, 3, 4, 5, 6].filter(d => planoSemana[d]?.exercicios?.length).length;
+
+const CONQUISTAS = [
+  { id: 'primeiro-treino', icone: '🏁', nome: 'Primeiro treino', desc: 'Marcou o primeiro treino', ok: c => c.total >= 1 },
+  { id: 'primeiro-checkin', icone: '📸', nome: 'Primeiro check-in', desc: 'Fez o primeiro check-in na academia', ok: c => c.checkins >= 1 },
+  { id: 'sequencia-3', icone: '🔥', nome: 'Pegando ritmo', desc: '3 treinos seguidos', ok: c => c.recorde >= 3 },
+  { id: 'sequencia-7', icone: '🔥', nome: 'Imparável', desc: '7 treinos seguidos', ok: c => c.recorde >= 7 },
+  { id: 'sequencia-20', icone: '⚡', nome: 'Máquina', desc: '20 treinos seguidos', ok: c => c.recorde >= 20 },
+  { id: 'semana-completa', icone: '✅', nome: 'Semana completa', desc: 'Fez todos os treinos da semana', ok: c => c.semanaCompleta },
+  { id: 'quatro-semanas', icone: '🏆', nome: 'Um mês firme', desc: '4 semanas completas seguidas', ok: c => c.melhorSemanas >= 4 },
+  { id: 'treinos-10', icone: '💪', nome: '10 treinos', desc: '10 dias de treino', ok: c => c.total >= 10 },
+  { id: 'treinos-50', icone: '🥇', nome: '50 treinos', desc: '50 dias de treino', ok: c => c.total >= 50 },
+  { id: 'treinos-100', icone: '👑', nome: '100 treinos', desc: '100 dias de treino', ok: c => c.total >= 100 },
+  { id: 'kg-1', icone: '⬇️', nome: 'Primeiro quilo', desc: 'Perdeu 1 kg desde o primeiro registro', ok: c => c.perdeu >= 1 },
+  { id: 'kg-5', icone: '🎯', nome: '5 kg a menos', desc: 'Perdeu 5 kg desde o primeiro registro', ok: c => c.perdeu >= 5 },
+  { id: 'kg-10', icone: '🌟', nome: '10 kg a menos', desc: 'Perdeu 10 kg desde o primeiro registro', ok: c => c.perdeu >= 10 },
+  { id: 'faixa-saudavel', icone: '💚', nome: 'Faixa saudável', desc: 'Chegou à faixa de peso saudável', ok: c => c.entrouNaFaixa },
+];
+
+function contextoConquistas(planoSemana, registros, checkins, pesos, alturaCm) {
+  const seq = sequencias(planoSemana, registros, checkins);
+  const sem = semanasCompletas(planoSemana, registros, checkins);
+  const perdeu = pesos.length > 1 ? pesos[0].kg - pesos.at(-1).kg : 0;
+  let entrouNaFaixa = false;
+  if (alturaCm && pesos.length > 1) {
+    const [min, max] = faixaSaudavel(alturaCm);
+    entrouNaFaixa = pesos[0].kg > max && pesos.at(-1).kg <= max && pesos.at(-1).kg >= min;
+  }
+  return {
+    total: diasTreinados(registros, checkins).length, checkins: checkins.length,
+    atual: seq.atual, recorde: seq.recorde, semanaCompleta: sem.alguma, melhorSemanas: sem.melhor,
+    semanasSeguidas: sem.seguidas, perdeu, entrouNaFaixa,
+  };
+}
+
+// Selos: desbloqueados com a data (guardada no perfil) e os que faltam, apagados
+function gradeConquistas(ctx, guardadas, mostrarBloqueadas) {
+  const lista = CONQUISTAS.filter(q => guardadas?.[q.id] || q.ok(ctx));
+  const bloqueadas = mostrarBloqueadas ? CONQUISTAS.filter(q => !lista.includes(q)) : [];
+  if (!lista.length && !bloqueadas.length) return '<p class="small muted">Nenhuma conquista ainda.</p>';
+  return `<div class="selos">${lista.map(q => `<div class="selo"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b>
+      <span class="small muted">${guardadas?.[q.id] ? dataCurta(guardadas[q.id]) : esc(q.desc)}</span></div>`).join('')}
+    ${bloqueadas.map(q => `<div class="selo bloqueado"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b><span class="small muted">${esc(q.desc)}</span></div>`).join('')}</div>`;
+}
+
+function cartaoSequencia(ctx) {
+  const recorde = ctx.atual >= 2 && ctx.atual >= ctx.recorde ? 'Recorde atual! 🎉' : `Recorde: ${ctx.recorde}`;
+  const semanas = ctx.semanasSeguidas ? ` · ${ctx.semanasSeguidas} ${ctx.semanasSeguidas === 1 ? 'semana completa' : 'semanas completas seguidas'}` : '';
+  return `<div class="card row sequencia">
+    <div class="fogo" aria-hidden="true">🔥</div>
+    <div class="grow"><b class="tabular">${ctx.atual} ${ctx.atual === 1 ? 'treino seguido' : 'treinos seguidos'}</b>
+      <p class="small muted">${recorde}${semanas}</p></div>
+  </div>`;
+}
+
+// Quando aparece conquista nova, guarda no perfil e avisa quem acompanha (uma vez só)
+let verificandoConquistas = null;
+function verificarConquistas() {
+  clearTimeout(verificandoConquistas);
+  verificandoConquistas = setTimeout(async () => {
+    const C = S.carregado;
+    if (!S.user || !S.perfil || !(C.plano && C.registros && C.checkins && C.pesos)) return;
+    const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil.alturaCm);
+    const guardadas = S.perfil.conquistas;
+    const novas = CONQUISTAS.filter(q => q.ok(ctx) && !guardadas?.[q.id]);
+    if (!novas.length) return;
+    const primeiraVez = !guardadas; // quem já usava o app antes das conquistas: registra sem alarde
+    try {
+      await Store.registrarConquistas(uid(), novas.map(q => q.id), isoDe(hoje()));
+      if (primeiraVez) return;
+      toast(`🏆 Nova conquista: ${novas.map(q => q.nome).join(', ')}`);
+      novas.forEach(q => Store.avisar({ evento: 'conquista', id: q.id, nome: `${q.icone} ${q.nome}` }));
+    } catch (err) { console.warn('Conquistas', err); }
+  }, 800);
+}
+
+// ---------- Meta do casal (por mês, com recompensa) ----------
+const mesAtual = () => isoDe(hoje()).slice(0, 7);
+const nomeMes = mes => new Date(mes + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long' });
+const treinosNoMes = (registros, checkins, mes = mesAtual()) => diasTreinados(registros, checkins).filter(d => d.startsWith(mes)).length;
+
+// lado = 'atleta' (ela, vendo a meta com quem acompanha) ou 'viewer' (quem acompanha)
+// feitos = treinos no mês, ou null quando quem acompanha não tem permissão de ver
+function cartaoMetaCasal(c, lado, feitos, nomeOutro) {
+  const mes = mesAtual();
+  const meta = c.meta?.mes === mes ? c.meta : null;
+  const outro = lado === 'atleta' ? nomeDe(c, 'viewer') : nomeOutro || nomeDe(c, 'atleta');
+  const editando = S.editandoMeta === c.id || !meta;
+  const form = `<form class="stack" data-meta-casal="${c.id}">
+      <div class="row">
+        <div class="field" style="width:96px"><label class="label" for="metaTreinos-${c.id}">Treinos</label>
+          <input id="metaTreinos-${c.id}" type="text" inputmode="numeric" maxlength="2" value="${meta?.treinos ?? c.meta?.treinos ?? 12}"></div>
+        <div class="field grow"><label class="label" for="metaRecompensa-${c.id}">Recompensa</label>
+          <input id="metaRecompensa-${c.id}" maxlength="60" value="${esc(meta?.recompensa ?? c.meta?.recompensa ?? '')}" placeholder="Ex.: jantar especial"></div>
+      </div>
+      <div class="row">${meta ? `<button class="btn ghost" type="button" data-cancelar-meta>Cancelar</button>` : ''}<button class="btn" type="submit">Salvar meta</button></div>
+    </form>`;
+  if (!meta || editando) {
+    return `<section class="block"><span class="label">Meta do casal · ${nomeMes(mes)}</span>
+      <div class="card stack">${meta ? '' : (lado === 'atleta'
+        ? `<p class="small">Combine com ${esc(outro)} quantos treinos você vai fazer em ${nomeMes(mes)} e qual é a recompensa quando bater.</p>`
+        : `<p class="small">Combine com ${esc(outro)} quantos treinos fazer em ${nomeMes(mes)} e qual é a recompensa quando bater.</p>`)}${form}</div></section>`;
+  }
+  const pct = feitos === null ? 0 : Math.min(100, Math.round(100 * feitos / meta.treinos));
+  const batida = feitos !== null && feitos >= meta.treinos;
+  return `<section class="block"><div class="row between"><span class="label">Meta do casal · ${nomeMes(mes)}</span>
+      <button class="link" data-editar-meta="${c.id}">Editar</button></div>
+    <div class="card stack ${batida ? 'aviso' : ''}">
+      <div class="row between"><h3 class="grow">${meta.treinos} treinos</h3>${feitos === null ? '' : `<span class="small tabular">${feitos}/${meta.treinos}</span>`}</div>
+      ${feitos === null ? `<p class="small muted">Para ver o progresso, ${esc(outro)} precisa liberar ver treinos ou check-ins.</p>` : `<div class="bar"><i style="width:${pct}%"></i></div>`}
+      <p class="small">🎁 ${esc(meta.recompensa || 'Recompensa a combinar')}</p>
+      ${batida ? `<p><b>Meta batida! 🎉</b> ${lado === 'atleta' ? `Hora de cobrar de ${esc(outro)}.` : 'Hora de cumprir a recompensa.'}</p>`
+        : feitos !== null ? `<p class="small muted">Faltam ${meta.treinos - feitos} ${meta.treinos - feitos === 1 ? 'treino' : 'treinos'}.</p>` : ''}
+    </div></section>`;
+}
+
+// Quando ela bate a meta, marca na conexão e avisa quem acompanha (uma vez por mês)
+function verificarMetas() {
+  if (!S.user || !(S.carregado.registros && S.carregado.checkins)) return;
+  const feitos = treinosNoMes(S.registros, S.checkins);
+  meusAcompanhantes().forEach(c => {
+    const m = c.meta;
+    if (!m || m.mes !== mesAtual() || m.batida || feitos < m.treinos) return;
+    Store.salvarMetaCasal(c.id, { ...m, batida: true }).then(() => {
+      toast(`🎉 Meta do mês batida! ${m.recompensa ? 'Recompensa: ' + m.recompensa : ''}`);
+      Store.avisar({ evento: 'metaBatida', conexaoId: c.id });
+    }, err => console.warn('Meta do casal', err));
+  });
+}
 
 // ---------- IMC ----------
 const FAIXAS_IMC = [
@@ -681,7 +853,12 @@ function telaProgresso() {
   const semanas = semanasFrequencia(S.plano, S.registros, S.checkins);
   const media = semanas.length ? semanas.reduce((a, s) => a + s.feitos, 0) / semanas.length : 0;
   const recentes = S.pesos.slice(-5).reverse();
+  const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil?.alturaCm);
+  const qtd = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id] || q.ok(ctx)).length;
   return `${cabecalho()}
+  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
+  <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
+    ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>
   <section class="block"><span class="label">Peso</span>
     ${resumoPeso(S.pesos, meta)}
     ${cartaoImc(S.pesos, S.perfil?.alturaCm, true, meta)}
@@ -785,10 +962,17 @@ function telaAcompanhar() {
   return `<div class="top"><div class="grow"><span class="label">Acompanhando</span><h1>${esc(nome)}</h1></div></div>
   ${aceitas.length > 1 ? `<div class="chips">${aceitas.map(c => `<button class="chip ${c.id === atual.id ? 'on' : ''}" data-acomp="${c.id}">${esc(nomeDe(c, 'atleta'))}</button>`).join('')}</div>` : ''}
   ${secaoCheckins}
+  ${cartaoMetaCasal(atual, 'viewer', atual.perm?.treinos || atual.perm?.checkins
+      ? treinosNoMes(A?.registros || {}, checkins) : null, nome)}
   ${secaoRecados(atual, nome, 10, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])}
   ${corpo}
-  ${atual.perm?.treinos && A?.temPlano && A?.temRegistros && !A.bloqTreinos ? `<section class="block"><span class="label">Treinos por semana</span>
-    <div class="card">${graficoFrequencia('freqAcomp', semanasFrequencia(A.plano, A.registros, checkins))}</div></section>` : ''}
+  ${atual.perm?.treinos && A?.temPlano && A?.temRegistros && !A.bloqTreinos ? (() => {
+    const ctx = contextoConquistas(A.plano, A.registros, checkins, A.pesos || [], atual.alturaCm);
+    return `<section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
+    <section class="block"><span class="label">Treinos por semana</span>
+      <div class="card">${graficoFrequencia('freqAcomp', semanasFrequencia(A.plano, A.registros, checkins))}</div></section>
+    <section class="block"><span class="label">Conquistas de ${esc(nome)}</span>${gradeConquistas(ctx, null, false)}</section>`;
+  })() : ''}
   ${atual.perm?.peso && !A?.bloqPeso ? `<section class="block"><span class="label">Peso</span>
     ${!A?.temPesos ? '<p class="muted">Carregando…</p>'
       : `${resumoPesoAcomp(A.pesos)}${cartaoImc(A.pesos, atual.alturaCm, false, null)}<div class="card">${graficoPeso('pesoAcomp', A.pesos, null)}</div>`}</section>` : ''}
@@ -838,12 +1022,12 @@ function comecarEscutas(user) {
         try { await Store.criarPerfil(user.uid, user.nome || user.email.split('@')[0], user.email); } catch (e) { erro(e); }
         return;
       }
-      S.perfil = perfil; render();
+      S.perfil = perfil; render(); verificarConquistas();
     }, erro),
-    Store.escutarPlano(user.uid, plano => { S.plano = plano; render(); }, erro),
-    Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; render(); }, erro),
-    Store.escutarCheckins(user.uid, desde, lista => { S.checkins = lista; render(); }, erro),
-    Store.escutarPesos(user.uid, pesos => { S.pesos = pesos; render(); }, erro),
+    Store.escutarPlano(user.uid, plano => { S.plano = plano; S.carregado.plano = true; aposMudanca(); }, erro),
+    Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; S.carregado.registros = true; aposMudanca(); }, erro),
+    Store.escutarCheckins(user.uid, desde, lista => { S.checkins = lista; S.carregado.checkins = true; aposMudanca(); }, erro),
+    Store.escutarPesos(user.uid, pesos => { S.pesos = pesos; S.carregado.pesos = true; aposMudanca(); }, erro),
     Store.escutarMedidas(user.uid, medidas => { S.medidas = medidas; render(); }, erro),
     Store.escutarConexoes(user.uid, conexoes => {
       S.conexoes = conexoes;
@@ -851,9 +1035,13 @@ function comecarEscutas(user) {
       sincronizarAcomp();
       sincronizarMensagens();
       render();
+      verificarMetas();
     }, erro),
   );
 }
+
+// Meus dados mudaram: redesenha e confere conquistas e metas do casal
+function aposMudanca() { render(); verificarConquistas(); verificarMetas(); }
 
 // Escuta os dados da pessoa que estou acompanhando. Refaz a escuta quando a pessoa
 // muda, aceita o pedido ou liga/desliga as permissões de treinos e check-ins.
@@ -892,12 +1080,9 @@ function sincronizarAcomp() {
   );
 }
 
-// Primeiro dia que entra no histórico (gráfico de frequência)
-function inicioHistorico() {
-  const d = new Date(semanaAtual()[0]);
-  d.setDate(d.getDate() - 7 * (SEMANAS_HISTORICO - 1));
-  return isoDe(d);
-}
+// Histórico inteiro de treinos e check-ins (documentos pequenos; as fotos ficam à parte).
+// É o que permite calcular sequências, conquistas e a meta do mês.
+const inicioHistorico = () => '2000-01-01';
 
 // Uma escuta de recados para cada conexão aceita
 function sincronizarMensagens() {
@@ -922,7 +1107,7 @@ function pararMensagens() { Object.values(pararMsgs).forEach(f => f()); pararMsg
 if (Store.configurado) {
   Store.onAuthChange(user => {
     S.user = user;
-    S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {}; S.pesos = []; S.medidas = []; S.dica = {};
+    S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {}; S.pesos = []; S.medidas = []; S.dica = {}; S.carregado = {}; S.editandoMeta = null;
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     pararDeAcompanhar(); pararMensagens();
@@ -994,6 +1179,8 @@ document.addEventListener('click', e => {
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
     return;
   }
+  if (b.dataset.editarMeta) { S.editandoMeta = b.dataset.editarMeta; render(); return; }
+  if (b.dataset.cancelarMeta !== undefined) { S.editandoMeta = null; render(); return; }
   if (b.dataset.medidaSel) { S.medidaSel = b.dataset.medidaSel; render(); return; }
   if (b.dataset.metaSugerida) {
     const p = S.perfil || {};
@@ -1165,6 +1352,21 @@ document.addEventListener('submit', async e => {
     $('#exnome').value = ''; $('#excarga').value = '';
     await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício adicionado');
     $('#exnome')?.focus();
+  }
+
+  if (f.dataset.metaCasal) {
+    const id = f.dataset.metaCasal;
+    const treinos = parseInt(document.getElementById(`metaTreinos-${id}`).value, 10);
+    const recompensa = document.getElementById(`metaRecompensa-${id}`).value.trim().slice(0, 60);
+    if (!(treinos >= 1 && treinos <= 31)) return toast('Escolha de 1 a 31 treinos no mês.');
+    const c = S.conexoes.find(x => x.id === id);
+    // Se ela já fez mais treinos do que a nova meta, conta como batida (sem aviso repetido)
+    const feitos = c?.atleta === uid() ? treinosNoMes(S.registros, S.checkins) : null;
+    const batida = c?.meta?.mes === mesAtual() && c.meta.batida && treinos <= (c.meta.treinos || 0);
+    S.editandoMeta = null;
+    await salvar(Store.salvarMetaCasal(id, { mes: mesAtual(), treinos, recompensa, batida: !!batida }), 'Meta combinada 🤝');
+    if (feitos !== null) verificarMetas();
+    return;
   }
 
   if (f.id === 'formMedida') {

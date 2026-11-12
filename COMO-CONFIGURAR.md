@@ -133,7 +133,9 @@ O script confere de hora em hora quem escolheu aquele horário no app (Perfil > 
 | 4 | Notificações (Apps Script + Firebase Cloud Messaging) | ✅ pronta |
 | 5 | Peso, gráfico e frequência | ✅ pronta |
 | 6 | IMC, medidas do corpo, horário do lembrete | ✅ pronta |
-| 7 | Sequência e conquistas, metas do casal, resumo de domingo | próxima |
-| 8 | Evolução de carga, fotos de antes e depois, backup semanal | |
+| 7 | Sequência e conquistas, metas do casal, resumo de domingo | ✅ pronta |
+| 8 | Evolução de carga, fotos de antes e depois, backup semanal | próxima |
+
+> Para testar o resumo de domingo em outro dia: no script, rode **testarResumo**. Atenção: ele manda o resumo de verdade para todo mundo que usou o app na semana.
 
 O protótipo de referência está em `prototipo/treino-junto.html`.

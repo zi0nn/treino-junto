@@ -18,6 +18,7 @@ const FIREBASE_API_KEY = 'AIzaSyBLQ20gBSI6As5FekEBFdwGJrHBXA2CtjA'; // a mesma d
 const SITE_URL = 'https://zi0nn.github.io/treino-junto/';
 const FUSO = 'America/Sao_Paulo';
 const HORA_PADRAO = 19; // horário do lembrete de quem não escolheu outro no app
+const HORA_RESUMO = 20; // domingo, resumo da semana
 
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/' + PROJETO + '/databases/(default)/documents';
 const REACOES = ['💪', '🔥', '❤️', '👏'];
@@ -36,6 +37,8 @@ function doPost(e) {
     if (dados.evento === 'checkin') avisarCheckin(uid, String(dados.checkinId || ''));
     else if (dados.evento === 'reacao') avisarReacao(uid, String(dados.atleta || ''), String(dados.checkinId || ''));
     else if (dados.evento === 'recado') avisarRecado(uid, String(dados.conexaoId || ''), String(dados.texto || ''));
+    else if (dados.evento === 'conquista') avisarConquista(uid, String(dados.id || ''), String(dados.nome || '').slice(0, 40));
+    else if (dados.evento === 'metaBatida') avisarMetaBatida(uid, String(dados.conexaoId || ''));
     else return responder({ ok: false, erro: 'Evento desconhecido' });
 
     return responder({ ok: true });
@@ -100,6 +103,85 @@ function avisarRecado(remetente, conexaoId, texto) {
     SITE_URL + (destino === c.viewer ? '#acompanhar' : ''), 'recado-' + conexaoId);
 }
 
+// Conquista nova → avisa quem acompanha (só se ela foi mesmo registrada hoje no perfil)
+function avisarConquista(atleta, id, nome) {
+  const p = lerDoc('users/' + atleta);
+  if (!p || !p.conquistas || p.conquistas[id] !== hojeISO()) return;
+  conexoesDe('atleta', atleta)
+    .filter(c => c.status === 'aceita' && c.perm && (c.perm.treinos || c.perm.checkins))
+    .forEach(c => {
+      if (!querAviso(c.viewer, 'conquistas')) return;
+      notificar(c.viewer, '🏆 ' + (p.nome || 'Ela') + ' ganhou uma conquista', nome || 'Nova conquista no Treino Junto',
+        SITE_URL + '#acompanhar', 'conquista-' + atleta + '-' + id);
+    });
+}
+
+// Meta do casal batida → avisa quem acompanha (o script reconta os treinos do mês)
+function avisarMetaBatida(atleta, conexaoId) {
+  const c = lerDoc('conexoes/' + conexaoId);
+  if (!c || c.status !== 'aceita' || c.atleta !== atleta || !c.meta || !c.meta.batida) return;
+  const mes = hojeISO().slice(0, 7);
+  if (c.meta.mes !== mes || treinosNoMes(atleta, mes) < c.meta.treinos) return;
+  if (!querAviso(c.viewer, 'conquistas')) return;
+  notificar(c.viewer, '🎉 ' + nomeDe(atleta) + ' bateu a meta do mês!',
+    c.meta.treinos + ' treinos' + (c.meta.recompensa ? '. Recompensa: ' + c.meta.recompensa : '') + '. Hora de cumprir! 😄',
+    SITE_URL + '#acompanhar', 'meta-' + conexaoId);
+}
+
+// Dias com treino (exercício marcado ou check-in) num mês 'AAAA-MM'
+function treinosNoMes(uid, mes) {
+  const dias = {};
+  buscar('users/' + uid, 'checkins', 'data', mes + '-01', 'GREATER_THAN_OR_EQUAL')
+    .filter(c => String(c.data).indexOf(mes) === 0).forEach(c => { dias[c.data] = true; });
+  listar('users/' + uid + '/registros')
+    .filter(r => r.id.indexOf(mes) === 0 && (r.feitos || []).length).forEach(r => { dias[r.id] = true; });
+  return Object.keys(dias).length;
+}
+
+// ---------- Resumo da semana (domingo às 20h) ----------
+function resumoSemanal(pessoas, conexoes) {
+  const agora = new Date();
+  const dia = k => Utilities.formatDate(new Date(agora.getTime() - k * 86400000), FUSO, 'yyyy-MM-dd');
+  const semana = [6, 5, 4, 3, 2, 1, 0].map(dia); // segunda ... domingo (hoje)
+  const porId = {};
+  pessoas.forEach(u => { porId[u.id] = u; });
+
+  pessoas.forEach(u => {
+    try {
+      const plano = {};
+      listar('users/' + u.id + '/plano').forEach(p => { plano[p.id] = (p.exercicios || []).length > 0; });
+      // segunda = 1 ... domingo = 0
+      const planejados = semana.filter((d, i) => plano[String((i + 1) % 7)]).length;
+      const treinou = {};
+      buscar('users/' + u.id, 'checkins', 'data', semana[0], 'GREATER_THAN_OR_EQUAL').forEach(c => { treinou[c.data] = true; });
+      semana.forEach(d => { const r = lerDoc('users/' + u.id + '/registros/' + d); if (r && (r.feitos || []).length) treinou[d] = true; });
+      const feitos = semana.filter(d => treinou[d]).length;
+      if (!planejados && !feitos) return; // não usou o app esta semana
+
+      // Peso: último da semana comparado com o último antes dela
+      const pesos = listar('users/' + u.id + '/pesos').sort((a, b) => (a.id < b.id ? -1 : 1));
+      const antes = pesos.filter(p => p.id < semana[0]).pop();
+      const depois = pesos.filter(p => p.id >= semana[0]).pop();
+      const dif = antes && depois ? depois.kg - antes.kg : null;
+      const pesoTxt = dif === null ? '' : ' · Peso: ' + (Math.abs(dif) < 0.05 ? 'estável' : (dif < 0 ? '−' : '+') + Math.abs(dif).toFixed(1).replace('.', ',') + ' kg');
+      const treinosTxt = feitos + ' de ' + planejados + ' treinos' + (planejados && feitos >= planejados ? ' 🏆' : ' 💪');
+
+      if (querAviso(u.id, 'resumo', u)) {
+        notificar(u.id, 'Sua semana: ' + treinosTxt, (feitos >= planejados ? 'Semana completa! ' : 'Bora pra próxima! ') + pesoTxt.replace(' · ', ''),
+          SITE_URL + '#progresso', 'resumo');
+      }
+      conexoes.filter(c => c.atleta === u.id && c.perm && (c.perm.treinos || c.perm.checkins)).forEach(c => {
+        if (!querAviso(c.viewer, 'resumo', porId[c.viewer])) return;
+        notificar(c.viewer, 'Semana de ' + (u.nome || 'quem você acompanha') + ': ' + treinosTxt,
+          (c.perm.peso ? pesoTxt.replace(' · ', '') : '') || 'Manda um recado de parabéns ou de força!',
+          SITE_URL + '#acompanhar', 'resumo-' + u.id);
+      });
+    } catch (err) {
+      console.error('Resumo de ' + u.id + ': ' + err);
+    }
+  });
+}
+
 // ---------- Lembrete diário (roda sozinho de hora em hora) ----------
 // Cada pessoa escolhe no app o horário do lembrete (sem escolha: 19h). Nesse horário:
 //  - se ela tem treino planejado hoje e ainda não treinou, recebe "Hoje é dia de ..."
@@ -114,6 +196,11 @@ function lembreteDiario() {
   pessoas.forEach(u => { porId[u.id] = u; });
   const horaDe = u => Number.isFinite(u && u.horaLembrete) ? u.horaLembrete : HORA_PADRAO;
   const conexoes = listar('conexoes').filter(c => c.status === 'aceita');
+
+  // Domingo às 20h: resumo da semana
+  if (diaSemana === 0 && horaAgora === HORA_RESUMO) {
+    try { resumoSemanal(pessoas, conexoes); } catch (err) { console.error('Resumo: ' + err); }
+  }
 
   // Só interessa quem treina e tem alguém para avisar nesta hora (ela mesma ou quem acompanha)
   pessoas.forEach(u => {
@@ -154,6 +241,13 @@ function instalarRotinas() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('lembreteDiario').timeBased().everyHours(1).create();
   console.log('Pronto: lembrete ligado. Cada pessoa recebe no horário que escolheu no app (padrão: ' + HORA_PADRAO + 'h).');
+}
+
+// Para testar o resumo de domingo em qualquer dia: escolha esta função e clique em Executar
+// (manda o resumo dos últimos 7 dias para todo mundo que usou o app)
+function testarResumo() {
+  resumoSemanal(listar('users'), listar('conexoes').filter(c => c.status === 'aceita'));
+  console.log('Resumo enviado.');
 }
 
 // Para testar: manda um aviso de teste para todos os aparelhos de uma conta (troque o e-mail e rode)
@@ -224,12 +318,12 @@ function lerDoc(caminho) {
   return comoObjeto(JSON.parse(r.texto));
 }
 
-// Documentos de uma coleção com filtro "campo == valor". pai = '' (raiz) ou 'users/uid'
-function buscar(pai, colecao, campo, valor) {
+// Documentos de uma coleção com filtro "campo == valor" (ou outro operador). pai = '' (raiz) ou 'users/uid'
+function buscar(pai, colecao, campo, valor, operador) {
   const r = googleApi(FIRESTORE + (pai ? '/' + pai : '') + ':runQuery', {
     structuredQuery: {
       from: [{ collectionId: colecao }],
-      where: { fieldFilter: { field: { fieldPath: campo }, op: 'EQUAL', value: { stringValue: valor } } },
+      where: { fieldFilter: { field: { fieldPath: campo }, op: operador || 'EQUAL', value: { stringValue: valor } } },
     },
   });
   if (r.codigo !== 200) throw new Error('Firestore ' + r.codigo + ': ' + r.texto);

@@ -263,6 +263,18 @@ export function salvarMedida(uid, data, medidas) {
 }
 export const apagarMedida = (uid, data) => deleteDoc(doc(db, 'users', uid, 'medidas', data));
 
+// ---------- Conquistas e meta do casal ----------
+
+// Guarda o dia em que cada conquista foi desbloqueada: users/{uid}.conquistas.{id} = 'AAAA-MM-DD'
+export function registrarConquistas(uid, ids, data) {
+  const campos = {};
+  ids.forEach(id => { campos[`conquistas.${id}`] = data; });
+  return updateDoc(doc(db, 'users', uid), campos);
+}
+
+// meta = { mes: 'AAAA-MM', treinos, recompensa, batida }
+export const salvarMetaCasal = (conexaoId, meta) => updateDoc(doc(db, 'conexoes', conexaoId), { meta });
+
 // A altura vai também nas conexões em que eu treino, para quem acompanha calcular o IMC
 // (o perfil em si é privado). Só a altura: o resto do perfil continua só meu.
 export async function copiarAlturaParaConexoes(ids, alturaCm) {

@@ -104,6 +104,16 @@ p { margin: 0; }
 .pill.wait { background: var(--warn-soft); color: var(--warn); }
 .pill.bad { background: var(--hot-soft); color: var(--hot); }
 
+/* Sequência e conquistas */
+.sequencia { gap: 14px; }
+.fogo { font-size: 30px; line-height: 1; }
+.selos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.selo { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 10px 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.selo b { font-size: 12px; line-height: 1.2; }
+.selo .small { font-size: 11px; line-height: 1.2; }
+.selo-icone { font-size: 24px; line-height: 1.2; }
+.selo.bloqueado { opacity: .45; filter: grayscale(1); border-style: dashed; }
+
 /* IMC */
 .imc { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1.1; }
 .regua { position: relative; height: 10px; border-radius: 99px; overflow: hidden; background: var(--line); margin-top: 4px; }
