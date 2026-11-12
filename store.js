@@ -37,7 +37,7 @@ import {
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, query, where, documentId, onSnapshot, getDoc, getDocs, orderBy, limit,
+  collection, doc, query, where, documentId, onSnapshot, getDoc, getDocs,
   setDoc, updateDoc, deleteDoc, addDoc, writeBatch, deleteField,
   runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';

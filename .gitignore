@@ -1,1 +1,4 @@
 .claude/
+testes/node_modules/
+testes/*.log
+testes/firestore.rules

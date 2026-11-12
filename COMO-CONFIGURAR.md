@@ -164,7 +164,7 @@ Garante que só o seu site use o seu Firebase (ninguém consegue gastar a sua co
 | A | Menu em 5 abas, editar exercício, cronômetro de descanso, modelos, histórico, confirmação de e-mail | ✅ pronta |
 | B | Primeiro acesso, login com Google, apagar conta, privacidade, sugestões (App Check pausado) | ✅ pronta |
 | C | Sequência do casal e calendário do ano (o chat de recados e o cartão de compartilhar saíram) | ✅ pronta |
-| D | Testes automáticos das regras, organizar o código | |
+| D | Testes automáticos das regras, organizar o código | ✅ pronta |
 
 ### Backup semanal
 Toda segunda às 7h o script cria uma planilha com todos os dados na pasta **Treino Junto - Backups** do seu Google Drive (as fotos não vão, ficam no Firebase). Para fazer um backup na hora: no script, rode **fazerBackup**.
@@ -174,3 +174,11 @@ Se o script mudar o `appsscript.json` (permissões novas), cole o manifesto novo
 > Para testar o resumo de domingo em outro dia: no script, rode **testarResumo**. Atenção: ele manda o resumo de verdade para todo mundo que usou o app na semana.
 
 O protótipo de referência está em `prototipo/treino-junto.html`.
+
+## 9. Testes e organização do código
+
+- **Código:** `app.js` (começa aqui) e as telas em `js/` (base, treino, perfil, progresso, juntos). Os dados do Firebase ficam em `store.js`.
+- **Testes das regras de segurança:** precisam do Node.js e do Java. Abra a pasta `testes` no terminal, rode `npm install` (só na primeira vez) e depois `npm test`. Eles rodam num simulador: nada toca no banco de verdade. Rode sempre que mudar o `firestore.rules`, antes de publicar.
+- **Verificar o código:** na pasta `testes`, `npm run verificar` confere se algum nome ficou faltando nos arquivos do app.
+
+

@@ -1,0 +1,20 @@
+{
+  "name": "treino-junto-testes",
+  "private": true,
+  "description": "Testes automáticos das regras de segurança do Firestore (rodam num simulador, sem mexer nos dados de verdade)",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-treino-junto \"node --test --test-reporter=spec\"",
+    "pretest": "node -e \"require('fs').copyFileSync('../firestore.rules','firestore.rules')\"",
+    "verificar": "node verificar-codigo.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
+    "eslint": "^9.39.5",
+    "firebase": "^10.14.1",
+    "firebase-tools": "^13.35.1",
+    "globals": "^15.15.0"
+  }
+}
