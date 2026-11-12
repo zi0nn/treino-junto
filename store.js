@@ -12,6 +12,7 @@
      users/{uid}/fotos/{id}       → { img }   foto do check-in (JPEG reduzido, em texto). Fica separada
                                     para a lista de check-ins carregar rápido e a foto só quando aparece.
      conexoes/{id}/mensagens/{id} → { de, texto, criadoEm }   recados entre as duas pessoas conectadas
+     users/{uid}/pesos/{data}     → { kg, criadoEm }   um registro de peso por dia
      codigos/{codigo}             → { uid }   código de conexão
      dispositivos/{token}         → { uid, atualizadoEm }   aparelhos que recebem avisos
      users/{uid}.avisos           → { checkin, lembrete, meuLembrete, recados, reacoes } (false = desligado)
@@ -227,6 +228,19 @@ export function escutarMensagens(conexaoId, callback, onError) {
 
 export const enviarMensagem = (conexaoId, meuUid, texto) =>
   addDoc(collection(db, 'conexoes', conexaoId, 'mensagens'), { de: meuUid, texto: String(texto).slice(0, 300), criadoEm: serverTimestamp() });
+
+// ---------- Peso ----------
+
+export function escutarPesos(uid, callback, onError) {
+  return onSnapshot(collection(db, 'users', uid, 'pesos'), snap => {
+    callback(snap.docs.map(d => ({ data: d.id, kg: d.data().kg })).sort((a, b) => a.data.localeCompare(b.data)));
+  }, onError);
+}
+
+// Um registro por dia: registrar de novo no mesmo dia substitui
+export const salvarPeso = (uid, data, kg) =>
+  setDoc(doc(db, 'users', uid, 'pesos', data), { kg: Math.round(kg * 10) / 10, criadoEm: serverTimestamp() });
+export const apagarPeso = (uid, data) => deleteDoc(doc(db, 'users', uid, 'pesos', data));
 
 // ---------- Avisos no celular ----------
 // O app registra o aparelho no Firestore e, quando algo acontece (check-in, reação, recado),

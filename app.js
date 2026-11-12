@@ -64,7 +64,10 @@ const S = {
   fotos: {},         // fotos já carregadas: 'uid/idDoCheckin' → dataUrl | null | 'carregando'
   mensagens: {},     // recados por conexão
   checkin: { aberto: false, foto: null, processando: false, enviando: false },
+  pesos: [],         // meus registros de peso [{ data, kg }], do mais antigo ao mais novo
+  dica: {},          // ponto/barra tocado em cada gráfico: { idDoGrafico: índice }
 };
+const SEMANAS_HISTORICO = 8;
 let pararEscutas = [];
 let pararAcomp = [];
 let pararMsgs = {};  // escuta de recados por conexão
@@ -77,8 +80,9 @@ const ICONE = {
   semana: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   perfil: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   acompanhar: '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  progresso: '<svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
 };
-const ABAS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['acompanhar', 'Acompanhar'], ['perfil', 'Perfil']];
+const ABAS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['progresso', 'Progresso'], ['acompanhar', 'Acompanhar'], ['perfil', 'Perfil']];
 
 function mostrarNav(visivel) {
   $('#nav').hidden = !visivel;
@@ -355,7 +359,7 @@ function telaPerfil() {
   <section class="block"><span class="label">Seus dados</span>
     <form id="formPerfil" class="card stack">
       <div class="field"><label class="label" for="pnome">Nome</label><input id="pnome" value="${esc(p.nome)}" maxlength="40" required></div>
-      <div class="field"><label class="label" for="pmeta">Meta de peso (kg)</label><input id="pmeta" type="number" step="0.1" min="30" max="250" inputmode="decimal" value="${p.metaPeso ?? ''}" placeholder="Opcional"></div>
+      <div class="field"><label class="label" for="pmeta">Meta de peso (kg)</label><input id="pmeta" type="text" inputmode="decimal" autocomplete="off" maxlength="6" value="${p.metaPeso != null ? kgBR(p.metaPeso) : ''}" placeholder="Opcional"></div>
       <p class="small muted">${esc(p.email || S.user.email)}</p>
       <button class="btn" type="submit">Salvar</button>
     </form>
@@ -441,6 +445,142 @@ async function ativarAvisos() {
   render();
 }
 
+// ---------- Progresso: peso e frequência ----------
+const kgBR = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const dataCurta = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const diaDe = iso => new Date(iso + 'T12:00');
+
+// Treinos feitos x planejados nas últimas semanas (planejado = plano atual da semana)
+function semanasFrequencia(planoSemana, registros, checkins) {
+  const inicio = semanaAtual()[0];
+  const hojeIso = isoDe(hoje());
+  // Só conta a partir da primeira semana com alguma atividade
+  const datas = [...Object.keys(registros).filter(d => registros[d]?.feitos?.length), ...checkins.map(c => c.data)].sort();
+  const primeira = datas[0] || hojeIso;
+  const semanas = [];
+  for (let n = SEMANAS_HISTORICO - 1; n >= 0; n--) {
+    const seg = new Date(inicio); seg.setDate(inicio.getDate() - 7 * n);
+    const fim = new Date(seg); fim.setDate(seg.getDate() + 6);
+    if (isoDe(fim) < primeira) continue;
+    let feitos = 0, planejados = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seg); d.setDate(seg.getDate() + i);
+      if (isoDe(d) > hojeIso) break;
+      if (planoSemana[d.getDay()]?.exercicios?.length) planejados++;
+      if (statusDia(d, planoSemana, registros, checkins) === 'done') feitos++;
+    }
+    semanas.push({ inicio: isoDe(seg), feitos, planejados, atual: n === 0 });
+  }
+  return semanas;
+}
+
+// Gráfico de linha do peso. Toque num ponto mostra data e valor embaixo.
+function graficoPeso(id, pesos, meta) {
+  if (!pesos.length) return '<p class="small muted">Nenhum peso registrado ainda.</p>';
+  const W = 340, H = 170, esq = 34, dir = 14, topo = 14, base = 26;
+  const kgs = pesos.map(p => p.kg).concat(meta ? [meta] : []);
+  let min = Math.floor(Math.min(...kgs) - 0.5), max = Math.ceil(Math.max(...kgs) + 0.5);
+  if (max - min < 2) { min -= 1; max += 1; }
+  const t0 = diaDe(pesos[0].data).getTime(), t1 = diaDe(pesos.at(-1).data).getTime();
+  const x = data => pesos.length === 1 ? (esq + W - dir) / 2 : esq + (diaDe(data).getTime() - t0) / (t1 - t0) * (W - esq - dir);
+  const y = kg => topo + (max - kg) / (max - min) * (H - topo - base);
+  const passo = Math.max(1, Math.ceil((max - min) / 3));
+  const ticks = []; for (let v = Math.ceil(min); v <= max; v += passo) ticks.push(v);
+  const pts = pesos.map(p => `${x(p.data).toFixed(1)},${y(p.kg).toFixed(1)}`);
+  const sel = Math.min(S.dica[id] ?? pesos.length - 1, pesos.length - 1);
+  const p = pesos[sel];
+  return `<svg viewBox="0 0 ${W} ${H}" class="grafico" role="img" aria-label="Gráfico do peso: de ${kgBR(pesos[0].kg)} kg em ${dataCurta(pesos[0].data)} a ${kgBR(pesos.at(-1).kg)} kg em ${dataCurta(pesos.at(-1).data)}">
+    ${ticks.map(v => `<line x1="${esq}" x2="${W - dir}" y1="${y(v)}" y2="${y(v)}" class="g-grade"/><text x="${esq - 6}" y="${y(v) + 3.5}" text-anchor="end" class="g-texto">${v}</text>`).join('')}
+    ${meta ? `<line x1="${esq}" x2="${W - dir}" y1="${y(meta)}" y2="${y(meta)}" class="g-meta"/><text x="${W - dir}" y="${y(meta) - 5}" text-anchor="end" class="g-texto">meta ${kgBR(meta)}</text>` : ''}
+    ${pesos.length > 1 ? `<polygon points="${x(pesos[0].data)},${H - base} ${pts.join(' ')} ${x(pesos.at(-1).data)},${H - base}" class="g-area"/>
+      <polyline points="${pts.join(' ')}" class="g-linha"/>` : ''}
+    ${pesos.map((q, i) => `<circle cx="${x(q.data)}" cy="${y(q.kg)}" r="${i === sel ? 6 : 4}" class="g-ponto ${i === sel ? 'sel' : ''}"/>`).join('')}
+    <text x="${esq}" y="${H - 8}" class="g-texto">${dataCurta(pesos[0].data)}</text>
+    ${pesos.length > 1 ? `<text x="${W - dir}" y="${H - 8}" text-anchor="end" class="g-texto">${dataCurta(pesos.at(-1).data)}</text>` : ''}
+    ${pesos.map((q, i) => `<circle cx="${x(q.data)}" cy="${y(q.kg)}" r="16" class="g-alvo" data-dica="${id}" data-i="${i}" tabindex="0" role="button" aria-label="${dataCurta(q.data)}: ${kgBR(q.kg)} kg"/>`).join('')}
+  </svg>
+  <p class="small dica tabular"><b>${kgBR(p.kg)} kg</b> em ${dataCurta(p.data)}${sel > 0 ? ` · ${variacao(p.kg - pesos[sel - 1].kg)} desde o registro anterior` : ''}</p>`;
+}
+const variacao = d => d === 0 ? 'igual' : `${d < 0 ? '−' : '+'}${kgBR(Math.abs(d))} kg`;
+
+// Barras de treinos por semana: trilho = planejados, barra = feitos
+function graficoFrequencia(id, semanas) {
+  if (!semanas.length) return '<p class="small muted">Ainda sem semanas para comparar.</p>';
+  const W = 340, H = 140, esq = 8, dir = 8, topo = 10, base = 24;
+  const teto = Math.max(1, ...semanas.map(s => Math.max(s.planejados, s.feitos)));
+  const larg = (W - esq - dir) / semanas.length;
+  const barra = Math.min(26, larg - 8);
+  const y = v => topo + (teto - v) / teto * (H - topo - base);
+  const sel = Math.min(S.dica[id] ?? semanas.length - 1, semanas.length - 1);
+  const s = semanas[sel];
+  // Barra com as pontas de cima arredondadas (4px), apoiada na base
+  const coluna = (cx, v, classe) => {
+    if (!v) return '';
+    const x0 = cx - barra / 2, y0 = y(v), y1 = H - base, r = Math.min(4, (y1 - y0) / 2);
+    return `<path d="M${x0},${y1} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + barra - r} Q${x0 + barra},${y0} ${x0 + barra},${y0 + r} V${y1} Z" class="${classe}"/>`;
+  };
+  return `<svg viewBox="0 0 ${W} ${H}" class="grafico" role="img" aria-label="Treinos por semana nas últimas ${semanas.length} semanas">
+    <line x1="${esq}" x2="${W - dir}" y1="${H - base}" y2="${H - base}" class="g-grade"/>
+    ${semanas.map((q, i) => {
+      const cx = esq + larg * (i + 0.5);
+      return `${coluna(cx, q.planejados, 'g-trilho')}${coluna(cx, q.feitos, `g-barra ${i === sel ? 'sel' : ''}`)}
+        <text x="${cx}" y="${H - 8}" text-anchor="middle" class="g-texto">${q.atual ? 'agora' : dataCurta(q.inicio)}</text>
+        <rect x="${cx - larg / 2}" y="0" width="${larg}" height="${H}" class="g-alvo" data-dica="${id}" data-i="${i}" tabindex="0" role="button" aria-label="Semana de ${dataCurta(q.inicio)}: ${q.feitos} de ${q.planejados} treinos"/>`;
+    }).join('')}
+  </svg>
+  <p class="small dica tabular"><b>${s.feitos} de ${s.planejados} treinos</b> na semana ${s.atual ? 'atual (até hoje)' : `de ${dataCurta(s.inicio)}`}</p>
+  <div class="legend"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--line)"></i>Planejado</span></div>`;
+}
+
+function resumoPeso(pesos, meta) {
+  if (!pesos.length) return '';
+  const atual = pesos.at(-1).kg, perdeu = pesos[0].kg - atual;
+  const falta = meta ? atual - meta : null;
+  return `<div class="grid3">
+    <div class="stat"><span class="label">Atual</span><b class="tabular">${kgBR(atual)}</b><span class="small muted">kg</span></div>
+    <div class="stat"><span class="label">${perdeu >= 0 ? 'Perdeu' : 'Ganhou'}</span><b class="tabular">${kgBR(Math.abs(perdeu))}</b><span class="small muted">kg desde ${dataCurta(pesos[0].data)}</span></div>
+    <div class="stat"><span class="label">Meta</span><b class="tabular">${meta ? (falta > 0 ? kgBR(falta) : '✓') : '—'}</b><span class="small muted">${meta ? (falta > 0 ? `kg para ${kgBR(meta)}` : 'meta batida!') : 'defina no Perfil'}</span></div>
+  </div>`;
+}
+
+// Quem acompanha não vê a meta (fica no perfil dela, que é privado)
+function resumoPesoAcomp(pesos) {
+  if (!pesos.length) return '';
+  const atual = pesos.at(-1).kg, perdeu = pesos[0].kg - atual;
+  return `<div class="grid3">
+    <div class="stat"><span class="label">Atual</span><b class="tabular">${kgBR(atual)}</b><span class="small muted">kg</span></div>
+    <div class="stat"><span class="label">${perdeu >= 0 ? 'Perdeu' : 'Ganhou'}</span><b class="tabular">${kgBR(Math.abs(perdeu))}</b><span class="small muted">kg</span></div>
+    <div class="stat"><span class="label">Desde</span><b class="tabular">${dataCurta(pesos[0].data)}</b><span class="small muted">${pesos.length} registros</span></div>
+  </div>`;
+}
+
+function telaProgresso() {
+  const meta = S.perfil?.metaPeso || null;
+  const semanas = semanasFrequencia(S.plano, S.registros, S.checkins);
+  const media = semanas.length ? semanas.reduce((a, s) => a + s.feitos, 0) / semanas.length : 0;
+  const recentes = S.pesos.slice(-5).reverse();
+  return `${cabecalho()}
+  <section class="block"><span class="label">Peso</span>
+    ${resumoPeso(S.pesos, meta)}
+    <div class="card">${graficoPeso('meuPeso', S.pesos, meta)}</div>
+    <form id="formPeso" class="card stack">
+      <div class="row">
+        <div class="field grow"><label class="label" for="pesoData">Dia</label><input id="pesoData" type="date" max="${isoDe(hoje())}" value="${isoDe(hoje())}" required></div>
+        <div class="field grow"><label class="label" for="pesoKg">Peso (kg)</label><input id="pesoKg" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="${S.pesos.at(-1) ? kgBR(S.pesos.at(-1).kg) : 'Ex.: 72,5'}" required></div>
+      </div>
+      <button class="btn" type="submit">Registrar peso</button>
+      <p class="small muted">Dica: pese-se sempre no mesmo horário, de preferência de manhã. Uma vez por semana já mostra a tendência.</p>
+    </form>
+    ${recentes.length ? `<div class="card">${recentes.map(p => `<div class="ex"><div class="grow tabular"><b>${kgBR(p.kg)} kg</b> <span class="small muted">${dataCurta(p.data)}</span></div>
+      <button class="link" data-apagar-peso="${p.data}">${S.confirmar === 'peso:' + p.data ? 'Confirmar' : 'Apagar'}</button></div>`).join('')}</div>` : ''}
+    <p class="small muted">Quem te acompanha só vê seu peso se você ligar "Ver meu peso" no Perfil.</p>
+  </section>
+  <section class="block"><div class="row between"><span class="label">Treinos por semana</span>
+    ${semanas.length ? `<span class="small muted tabular">média ${media.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por semana</span>` : ''}</div>
+    <div class="card">${graficoFrequencia('minhaFreq', semanas)}</div>
+  </section>`;
+}
+
 function formConectar() {
   return `<form id="formConexao" class="stack">
     <div class="field"><label class="label" for="codigoIn">Código da pessoa</label>
@@ -523,6 +663,11 @@ function telaAcompanhar() {
   ${secaoCheckins}
   ${secaoRecados(atual, nome, 10, ['Bora treinar! 💪', 'Tô orgulhoso de você', 'Só 1 hora e tá feito', 'Arrasou hoje!'])}
   ${corpo}
+  ${atual.perm?.treinos && A?.temPlano && A?.temRegistros && !A.bloqTreinos ? `<section class="block"><span class="label">Treinos por semana</span>
+    <div class="card">${graficoFrequencia('freqAcomp', semanasFrequencia(A.plano, A.registros, checkins))}</div></section>` : ''}
+  ${atual.perm?.peso && !A?.bloqPeso ? `<section class="block"><span class="label">Peso</span>
+    ${!A?.temPesos ? '<p class="muted">Carregando…</p>'
+      : `${resumoPesoAcomp(A.pesos)}<div class="card">${graficoPeso('pesoAcomp', A.pesos, null)}</div>`}</section>` : ''}
   <section class="block"><span class="label">Acompanhar outra pessoa</span>${formConectar()}</section>
   ${aguardando ? `<section class="block"><span class="label">Pedidos enviados</span>${aguardando}</section>` : ''}
   <section class="block"><button class="btn ghost" data-remover-con="${atual.id}">${S.confirmar === atual.id ? `Tocar de novo para parar de acompanhar ${esc(nome)}` : `Parar de acompanhar ${esc(nome)}`}</button></section>`;
@@ -542,7 +687,7 @@ function render() {
   const rascunho = {};
   app.querySelectorAll('input[id]:not([type=file]):not([type=checkbox])').forEach(i => { rascunho[i.id] = i.value; });
   app.innerHTML = S.aba === 'semana' ? telaSemana() : S.aba === 'perfil' ? telaPerfil()
-    : S.aba === 'acompanhar' ? telaAcompanhar() : telaHoje();
+    : S.aba === 'acompanhar' ? telaAcompanhar() : S.aba === 'progresso' ? telaProgresso() : telaHoje();
   for (const [id, valor] of Object.entries(rascunho)) {
     const el = document.getElementById(id);
     if (el) el.value = valor;
@@ -561,7 +706,7 @@ function irPara(aba) {
 function comecarEscutas(user) {
   pararEscutas.forEach(f => f()); pararEscutas = [];
   const erro = err => { console.error(err); toast(mensagemErro(err)); };
-  const desde = isoDe(semanaAtual()[0]);
+  const desde = inicioHistorico(); // semanas anteriores entram no gráfico de frequência
   pararEscutas.push(
     Store.escutarPerfil(user.uid, async perfil => {
       if (!perfil) { // conta criada sem perfil (ex.: falhou a internet no cadastro)
@@ -574,9 +719,10 @@ function comecarEscutas(user) {
     Store.escutarPlano(user.uid, plano => { S.plano = plano; render(); }, erro),
     Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; render(); }, erro),
     Store.escutarCheckins(user.uid, desde, lista => { S.checkins = lista; render(); }, erro),
+    Store.escutarPesos(user.uid, pesos => { S.pesos = pesos; render(); }, erro),
     Store.escutarConexoes(user.uid, conexoes => {
       S.conexoes = conexoes;
-      if (S.confirmar && !S.confirmar.startsWith('ck:') && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
+      if (S.confirmar && !S.confirmar.includes(':') && !conexoes.some(c => c.id === S.confirmar)) S.confirmar = null;
       sincronizarAcomp();
       sincronizarMensagens();
       render();
@@ -586,7 +732,7 @@ function comecarEscutas(user) {
 
 // Escuta os dados da pessoa que estou acompanhando. Refaz a escuta quando a pessoa
 // muda, aceita o pedido ou liga/desliga as permissões de treinos e check-ins.
-const chaveAcomp = c => `${c.id}:${c.status}:${!!c.perm?.treinos}:${!!c.perm?.checkins}`;
+const chaveAcomp = c => `${c.id}:${c.status}:${!!c.perm?.treinos}:${!!c.perm?.checkins}:${!!c.perm?.peso}`;
 function pararDeAcompanhar() { pararAcomp.forEach(f => f()); pararAcomp = []; }
 function acompAtual() {
   const aceitas = quemAcompanho().filter(c => c.status === 'aceita');
@@ -594,29 +740,38 @@ function acompAtual() {
 }
 function sincronizarAcomp() {
   const atual = acompAtual();
-  const chave = atual && (atual.perm?.treinos || atual.perm?.checkins) ? chaveAcomp(atual) : null;
+  const chave = atual && (atual.perm?.treinos || atual.perm?.checkins || atual.perm?.peso) ? chaveAcomp(atual) : null;
   if ((S.acomp?.chave ?? null) === chave) return;
   pararDeAcompanhar();
   if (!chave) { S.acomp = null; return; }
   const alvo = S.acomp = {
-    chave, plano: {}, registros: {}, checkins: [],
-    temPlano: false, temRegistros: false, temCheckins: false, bloqTreinos: false, bloqCheckins: false,
+    chave, plano: {}, registros: {}, checkins: [], pesos: [],
+    temPlano: false, temRegistros: false, temCheckins: false, temPesos: false,
+    bloqTreinos: false, bloqCheckins: false, bloqPeso: false,
   };
   const atualizar = () => { if (S.acomp === alvo) render(); };
   const falhou = campo => err => {
     if (err.code !== 'permission-denied') { console.error(err); toast(mensagemErro(err)); }
     alvo[campo] = true; atualizar();
   };
-  const desde = isoDe(semanaAtual()[0]);
+  const desde = inicioHistorico();
   if (atual.perm?.treinos) pararAcomp.push(
     Store.escutarPlano(atual.atleta, plano => { alvo.plano = plano; alvo.temPlano = true; atualizar(); }, falhou('bloqTreinos')),
     Store.escutarRegistros(atual.atleta, desde, reg => { alvo.registros = reg; alvo.temRegistros = true; atualizar(); }, falhou('bloqTreinos')),
   );
-  // Check-ins: semana atual e a anterior, para mostrar o último mesmo numa segunda-feira
-  const duasSemanas = new Date(semanaAtual()[0]); duasSemanas.setDate(duasSemanas.getDate() - 7);
   if (atual.perm?.checkins) pararAcomp.push(
-    Store.escutarCheckins(atual.atleta, isoDe(duasSemanas), lista => { alvo.checkins = lista; alvo.temCheckins = true; atualizar(); }, falhou('bloqCheckins')),
+    Store.escutarCheckins(atual.atleta, desde, lista => { alvo.checkins = lista; alvo.temCheckins = true; atualizar(); }, falhou('bloqCheckins')),
   );
+  if (atual.perm?.peso) pararAcomp.push(
+    Store.escutarPesos(atual.atleta, pesos => { alvo.pesos = pesos; alvo.temPesos = true; atualizar(); }, falhou('bloqPeso')),
+  );
+}
+
+// Primeiro dia que entra no histórico (gráfico de frequência)
+function inicioHistorico() {
+  const d = new Date(semanaAtual()[0]);
+  d.setDate(d.getDate() - 7 * (SEMANAS_HISTORICO - 1));
+  return isoDe(d);
 }
 
 // Uma escuta de recados para cada conexão aceita
@@ -642,7 +797,7 @@ function pararMensagens() { Object.values(pararMsgs).forEach(f => f()); pararMsg
 if (Store.configurado) {
   Store.onAuthChange(user => {
     S.user = user;
-    S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {};
+    S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {}; S.pesos = []; S.dica = {};
     S.conexoes = []; S.acomp = null; S.acompId = null; S.confirmar = null;
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     pararDeAcompanhar(); pararMensagens();
@@ -663,7 +818,20 @@ async function salvar(promessa, sucesso) {
   try { await promessa; if (sucesso) toast(sucesso); } catch (err) { console.error(err); toast(mensagemErro(err)); }
 }
 
+// Tocar num ponto ou barra do gráfico mostra o valor embaixo dele
+function mostrarDica(alvo) {
+  S.dica[alvo.dataset.dica] = +alvo.dataset.i;
+  render();
+  document.querySelector(`[data-dica="${alvo.dataset.dica}"][data-i="${alvo.dataset.i}"]`)?.focus({ preventScroll: true });
+}
+document.addEventListener('keydown', e => {
+  const alvo = e.target.closest?.('[data-dica]');
+  if (alvo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); mostrarDica(alvo); }
+});
+
 document.addEventListener('click', e => {
+  const alvo = e.target.closest('[data-dica]');
+  if (alvo) { mostrarDica(alvo); return; }
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.modo) { S.modoLogin = b.dataset.modo; render(); return; }
@@ -692,6 +860,13 @@ document.addEventListener('click', e => {
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
     S.confirmar = null;
     salvar(Store.apagarCheckin(uid(), b.dataset.apagarCk), 'Check-in apagado');
+    return;
+  }
+  if (b.dataset.apagarPeso) {
+    const chave = 'peso:' + b.dataset.apagarPeso;
+    if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
+    S.confirmar = null;
+    salvar(Store.apagarPeso(uid(), b.dataset.apagarPeso), 'Registro apagado');
     return;
   }
   if (S.confirmar) { S.confirmar = null; render(); } // tocar em outra coisa cancela a confirmação
@@ -850,6 +1025,17 @@ document.addEventListener('submit', async e => {
     $('#exnome')?.focus();
   }
 
+  if (f.id === 'formPeso') {
+    const kg = parseFloat(String($('#pesoKg').value).replace(',', '.'));
+    const data = $('#pesoData').value;
+    if (!Number.isFinite(kg) || kg < 20 || kg > 300) return toast('Digite o peso em kg, por exemplo 72,5.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > isoDe(hoje())) return toast('Escolha um dia até hoje.');
+    $('#pesoKg').value = '';
+    delete S.dica.meuPeso; // o gráfico volta a destacar o registro mais novo
+    await salvar(Store.salvarPeso(uid(), data, kg), `Peso de ${dataCurta(data)} registrado`);
+    return;
+  }
+
   if (f.dataset.recado) {
     const input = document.getElementById(`recadoIn-${f.dataset.recado}`);
     const texto = input?.value.trim();
@@ -877,6 +1063,7 @@ document.addEventListener('submit', async e => {
     const nome = $('#pnome').value.trim();
     const meta = parseFloat($('#pmeta').value.replace(',', '.'));
     if (!nome) return toast('Digite seu nome.');
+    if (Number.isFinite(meta) && (meta < 30 || meta > 250)) return toast('A meta precisa estar entre 30 e 250 kg.');
     salvar(Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), metaPeso: Number.isFinite(meta) ? meta : null }), 'Dados salvos');
   }
 });
