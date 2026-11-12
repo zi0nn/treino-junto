@@ -102,6 +102,22 @@ p { margin: 0; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .pill.ok { background: var(--accent-soft); color: var(--accent); }
 .pill.wait { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--hot-soft); color: var(--hot); }
+
+/* IMC */
+.imc { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1.1; }
+.regua { position: relative; height: 10px; border-radius: 99px; overflow: hidden; background: var(--line); margin-top: 4px; }
+.regua span { position: absolute; top: 0; bottom: 0; }
+.regua span + span { border-left: 2px solid var(--surface); }
+.regua .z-ok { background: var(--accent); opacity: .55; }
+.regua .z-alerta { background: var(--warn); opacity: .45; }
+.regua .z-ruim { background: var(--hot); opacity: .45; }
+.regua i { position: absolute; top: -3px; bottom: -3px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); }
+.regua { overflow: visible; }
+.regua span:first-child { border-radius: 99px 0 0 99px; }
+.regua span:last-of-type { border-radius: 0 99px 99px 0; }
+.regua-num { position: relative; height: 14px; font-size: 10px; color: var(--muted); }
+.regua-num span { position: absolute; transform: translateX(-50%); }
 
 .stat { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
 .stat b { font-family: var(--display); font-size: 24px; font-weight: 800; }

@@ -94,10 +94,17 @@ Os avisos saem de um **Google Apps Script** na sua conta Google pessoal, a mesma
 5. Volte ao editor (ícone `< >`), abra o `appsscript.json`, apague tudo e cole o conteúdo do arquivo `avisos-script-manifest.json`.
 6. Clique em **Salvar** (ícone de disquete).
 
-### 7.3 Ligar o lembrete das 19h
+### 7.3 Ligar o lembrete
 1. No alto do editor, na lista de funções, escolha **instalarRotinas** e clique em **Executar**.
 2. Vai pedir autorização: **Revisar permissões**, escolha sua conta pessoal. Se aparecer "O Google não verificou este app", clique em **Avançado > Acessar Treino Junto - Avisos (não seguro)**. O app é seu. Depois clique em **Permitir**.
-3. Embaixo deve aparecer: `Pronto: lembrete diário ligado para as 19h.`
+3. Embaixo deve aparecer: `Pronto: lembrete ligado...`
+
+O script confere de hora em hora quem escolheu aquele horário no app (Perfil > Avisos > Horário do lembrete). Sem escolha, é às 19h.
+
+### 7.6 Quando o Claude mudar o `avisos-script.gs`
+1. Em script.google.com, abra o projeto **Treino Junto - Avisos**, apague o código e cole o novo. Clique em **Salvar**.
+2. Se ele pedir, rode **instalarRotinas** de novo.
+3. **Implantar > Gerenciar implantações > lápis ✏ > Versão: Nova versão > Implantar**. O endereço continua o mesmo.
 
 ### 7.4 Publicar como App da Web
 1. Clique em **Implantar > Nova implantação**.
@@ -125,5 +132,8 @@ Os avisos saem de um **Google Apps Script** na sua conta Google pessoal, a mesma
 | 3 | Check-in com foto, reações e recados | ✅ pronta |
 | 4 | Notificações (Apps Script + Firebase Cloud Messaging) | ✅ pronta |
 | 5 | Peso, gráfico e frequência | ✅ pronta |
+| 6 | IMC, medidas do corpo, horário do lembrete | ✅ pronta |
+| 7 | Sequência e conquistas, metas do casal, resumo de domingo | próxima |
+| 8 | Evolução de carga, fotos de antes e depois, backup semanal | |
 
 O protótipo de referência está em `prototipo/treino-junto.html`.

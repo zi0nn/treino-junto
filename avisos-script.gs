@@ -17,7 +17,7 @@ const PROJETO = 'treino-junto-4857e';
 const FIREBASE_API_KEY = 'AIzaSyBLQ20gBSI6As5FekEBFdwGJrHBXA2CtjA'; // a mesma do firebase-config.js (é pública)
 const SITE_URL = 'https://zi0nn.github.io/treino-junto/';
 const FUSO = 'America/Sao_Paulo';
-const HORA_LEMBRETE = 19; // aviso de "ainda não treinou hoje"
+const HORA_PADRAO = 19; // horário do lembrete de quem não escolheu outro no app
 
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/' + PROJETO + '/databases/(default)/documents';
 const REACOES = ['💪', '🔥', '❤️', '👏'];
@@ -100,33 +100,42 @@ function avisarRecado(remetente, conexaoId, texto) {
     SITE_URL + (destino === c.viewer ? '#acompanhar' : ''), 'recado-' + conexaoId);
 }
 
-// ---------- Lembrete diário (roda sozinho às 19h) ----------
-// Para cada pessoa que tem treino planejado hoje e ainda não treinou:
-//  - ela mesma recebe "Hoje é dia de ..."
-//  - quem acompanha recebe "Fulana ainda não treinou hoje"
+// ---------- Lembrete diário (roda sozinho de hora em hora) ----------
+// Cada pessoa escolhe no app o horário do lembrete (sem escolha: 19h). Nesse horário:
+//  - se ela tem treino planejado hoje e ainda não treinou, recebe "Hoje é dia de ..."
+//  - recebe também "Fulana ainda não treinou hoje" sobre quem ela acompanha
 
 function lembreteDiario() {
   const hoje = hojeISO();
+  const horaAgora = Number(Utilities.formatDate(new Date(), FUSO, 'H'));
   const diaSemana = Number(Utilities.formatDate(new Date(), FUSO, 'u')) % 7; // 1=segunda ... 7→0=domingo
+  const pessoas = listar('users');
+  const porId = {};
+  pessoas.forEach(u => { porId[u.id] = u; });
+  const horaDe = u => Number.isFinite(u && u.horaLembrete) ? u.horaLembrete : HORA_PADRAO;
   const conexoes = listar('conexoes').filter(c => c.status === 'aceita');
 
-  listar('users').forEach(u => {
+  // Só interessa quem treina e tem alguém para avisar nesta hora (ela mesma ou quem acompanha)
+  pessoas.forEach(u => {
     try {
+      const viewers = conexoes.filter(c => c.atleta === u.id && c.perm && (c.perm.treinos || c.perm.checkins)
+        && horaDe(porId[c.viewer]) === horaAgora);
+      const eu = horaDe(u) === horaAgora;
+      if (!eu && !viewers.length) return;
+
       const plano = lerDoc('users/' + u.id + '/plano/' + diaSemana);
       if (!plano || !(plano.exercicios || []).length) return; // descanso
       if (treinouHoje(u.id, hoje)) return;
 
       const titulo = plano.titulo || 'treino';
-      if (querAviso(u.id, 'meuLembrete', u)) {
+      if (eu && querAviso(u.id, 'meuLembrete', u)) {
         notificar(u.id, 'Hoje é dia de ' + titulo, 'Ainda dá tempo! Bora? 💪', SITE_URL, 'lembrete');
       }
-      conexoes
-        .filter(c => c.atleta === u.id && c.perm && (c.perm.treinos || c.perm.checkins))
-        .forEach(c => {
-          if (!querAviso(c.viewer, 'lembrete')) return;
-          notificar(c.viewer, (u.nome || 'Ela') + ' ainda não treinou hoje',
-            'Era dia de ' + titulo + '. Que tal mandar um incentivo?', SITE_URL + '#acompanhar', 'lembrete-' + u.id);
-        });
+      viewers.forEach(c => {
+        if (!querAviso(c.viewer, 'lembrete', porId[c.viewer])) return;
+        notificar(c.viewer, (u.nome || 'Ela') + ' ainda não treinou hoje',
+          'Era dia de ' + titulo + '. Que tal mandar um incentivo?', SITE_URL + '#acompanhar', 'lembrete-' + u.id);
+      });
     } catch (err) {
       console.error('Lembrete de ' + u.id + ': ' + err); // um erro não impede os outros
     }
@@ -140,11 +149,11 @@ function treinouHoje(uid, hoje) {
 }
 
 // ---------- Rode UMA vez pelo editor ----------
-// Autoriza o script e liga o lembrete diário das 19h
+// Autoriza o script e liga o lembrete (confere de hora em hora quem escolheu aquele horário)
 function instalarRotinas() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('lembreteDiario').timeBased().atHour(HORA_LEMBRETE).everyDays(1).inTimezone(FUSO).create();
-  console.log('Pronto: lembrete diário ligado para as ' + HORA_LEMBRETE + 'h.');
+  ScriptApp.newTrigger('lembreteDiario').timeBased().everyHours(1).create();
+  console.log('Pronto: lembrete ligado. Cada pessoa recebe no horário que escolheu no app (padrão: ' + HORA_PADRAO + 'h).');
 }
 
 // Para testar: manda um aviso de teste para todos os aparelhos de uma conta (troque o e-mail e rode)

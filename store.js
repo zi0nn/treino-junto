@@ -13,6 +13,9 @@
                                     para a lista de check-ins carregar rápido e a foto só quando aparece.
      conexoes/{id}/mensagens/{id} → { de, texto, criadoEm }   recados entre as duas pessoas conectadas
      users/{uid}/pesos/{data}     → { kg, criadoEm }   um registro de peso por dia
+     users/{uid}/medidas/{data}   → { cintura, quadril, braco, criadoEm }   em cm (privado, só a dona vê)
+     users/{uid}.alturaCm         → altura para o IMC (também copiada nas conexões em que ela é atleta)
+     users/{uid}.horaLembrete     → hora do lembrete diário (6 a 22; sem valor = 19)
      codigos/{codigo}             → { uid }   código de conexão
      dispositivos/{token}         → { uid, atualizadoEm }   aparelhos que recebem avisos
      users/{uid}.avisos           → { checkin, lembrete, meuLembrete, recados, reacoes } (false = desligado)
@@ -174,7 +177,8 @@ export function escutarConexoes(uid, callback, onError) {
   return () => parar.forEach(f => f());
 }
 
-export const aceitarConexao = (id, meuNome) => updateDoc(doc(db, 'conexoes', id), { status: 'aceita', atletaNome: meuNome });
+export const aceitarConexao = (id, meuNome, alturaCm) =>
+  updateDoc(doc(db, 'conexoes', id), { status: 'aceita', atletaNome: meuNome, ...(alturaCm ? { alturaCm } : {}) });
 export const salvarPermissoes = (id, perm) => updateDoc(doc(db, 'conexoes', id), { perm });
 export const removerConexao = id => deleteDoc(doc(db, 'conexoes', id));
 
@@ -241,6 +245,29 @@ export function escutarPesos(uid, callback, onError) {
 export const salvarPeso = (uid, data, kg) =>
   setDoc(doc(db, 'users', uid, 'pesos', data), { kg: Math.round(kg * 10) / 10, criadoEm: serverTimestamp() });
 export const apagarPeso = (uid, data) => deleteDoc(doc(db, 'users', uid, 'pesos', data));
+
+// ---------- Medidas do corpo ----------
+
+export function escutarMedidas(uid, callback, onError) {
+  return onSnapshot(collection(db, 'users', uid, 'medidas'), snap => {
+    callback(snap.docs.map(d => ({ data: d.id, ...d.data() })).sort((a, b) => a.data.localeCompare(b.data)));
+  }, onError);
+}
+
+export function salvarMedida(uid, data, medidas) {
+  const limpo = {};
+  for (const k of ['cintura', 'quadril', 'braco']) {
+    if (Number.isFinite(medidas[k])) limpo[k] = Math.round(medidas[k] * 10) / 10;
+  }
+  return setDoc(doc(db, 'users', uid, 'medidas', data), { ...limpo, criadoEm: serverTimestamp() });
+}
+export const apagarMedida = (uid, data) => deleteDoc(doc(db, 'users', uid, 'medidas', data));
+
+// A altura vai também nas conexões em que eu treino, para quem acompanha calcular o IMC
+// (o perfil em si é privado). Só a altura: o resto do perfil continua só meu.
+export async function copiarAlturaParaConexoes(ids, alturaCm) {
+  await Promise.all(ids.map(id => updateDoc(doc(db, 'conexoes', id), { alturaCm })));
+}
 
 // ---------- Avisos no celular ----------
 // O app registra o aparelho no Firestore e, quando algo acontece (check-in, reação, recado),
