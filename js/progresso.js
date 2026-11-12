@@ -275,7 +275,7 @@ export function calendarioAno() {
           ${semanas.map((s, w) => s.map((dia, i) => `<i class="q ${dia.st}" style="grid-column:${w + 2};grid-row:${i + 2}" title="${dataCurta(dia.iso)}"></i>`).join('')).join('')}
         </div>
       </div>
-      <div class="legend" style="margin-top:10px"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot-soft);border:1px solid var(--hot)"></i>Faltou</span><span><i style="background:var(--line)"></i>Descanso</span></div>
+      <div class="legend" style="margin-top:10px"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot-soft);border:1px solid var(--hot)"></i>Faltou</span><span><i style="border:2px solid var(--rest);background:transparent"></i>Descanso</span></div>
     </div>
     ${melhor ? `<p class="small muted">Mês mais forte: <b>${new Date(melhor[0] + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b>, com ${melhor[1]} ${melhor[1] === 1 ? 'dia' : 'dias'} de treino.</p>` : ''}
   </section>`;
@@ -538,7 +538,7 @@ export function graficoFrequencia(id, semanas) {
     }).join('')}
   </svg>
   <p class="small dica tabular"><b>${s.feitos} de ${s.planejados} treinos</b> na semana ${s.atual ? 'atual (até hoje)' : `de ${dataCurta(s.inicio)}`}</p>
-  <div class="legend"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--line)"></i>Planejado</span></div>`;
+  <div class="legend"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--plan-soft);border:1px solid var(--plan)"></i>Planejado</span></div>`;
 }
 
 export function resumoPeso(pesos, meta) {

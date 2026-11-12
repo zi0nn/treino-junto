@@ -361,7 +361,7 @@ export function telaHoje() {
 
 export function legenda() {
   return `<div class="legend"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot)"></i>Faltou</span>
-    <span><i style="background:var(--line)"></i>Planejado</span><span><i style="border:1px dashed var(--muted)"></i>Descanso</span></div>`;
+    <span><i style="background:var(--plan)"></i>Planejado</span><span><i style="border:2px solid var(--rest);background:transparent"></i>Descanso</span></div>`;
 }
 
 export function telaSemana() {
