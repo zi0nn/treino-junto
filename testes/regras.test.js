@@ -190,6 +190,19 @@ describe('Recados (chat removido)', () => {
   });
 });
 
+describe('Registro de erros', () => {
+  const erro = uid => ({ uid, mensagem: 'TypeError: x is undefined', detalhe: 'app.js:10', tela: 'hoje', versao: '1', aparelho: 'teste', criadoEm: serverTimestamp() });
+  it('grava erro em nome próprio, mas ninguém lê pelo app', async () => {
+    const db = banco(ANA);
+    await assertSucceeds(addDoc(collection(db, 'erros'), erro(ANA)));
+    await assertFails(getDocs(collection(db, 'erros')));
+  });
+  it('não grava erro em nome de outra pessoa nem sem login', async () => {
+    await assertFails(addDoc(collection(banco(ANA), 'erros'), erro(BETO)));
+    await assertFails(addDoc(collection(anonimo(), 'erros'), erro(ANA)));
+  });
+});
+
 describe('Sugestões, aparelhos e apagar conta', () => {
   it('sugestão: envia em nome próprio, mas ninguém lê pelo app', async () => {
     const db = banco(ANA);

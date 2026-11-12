@@ -19,6 +19,13 @@ export function telaDados() {
       <button class="btn" type="submit">Salvar</button>
     </form>
   </section>
+  <section class="block"><span class="label">Aparência</span>
+    <div class="seg tres" role="radiogroup" aria-label="Tema">
+      ${[['auto', 'Automático'], ['light', '☀️ Claro'], ['dark', '🌙 Escuro']].map(([v, l]) => `<button type="button" role="radio"
+        aria-checked="${temaAtual() === v}" class="${temaAtual() === v ? 'on' : ''}" data-tema="${v}">${l}</button>`).join('')}
+    </div>
+    <p class="small muted">"Automático" segue o tema do celular. A escolha vale só para este aparelho.</p>
+  </section>
   <section class="block"><span class="label">Mandar sugestão</span>
     <form id="formSugestao" class="card stack">
       <div class="seg" role="radiogroup" aria-label="Tipo">
@@ -31,10 +38,23 @@ export function telaDados() {
     </form>
   </section>
   <section class="block">
+    <button class="btn ghost" data-acao="baixar-dados">📥 Baixar meus dados</button>
     <a class="btn ghost" href="privacidade.html">🔒 Privacidade: quem vê o quê</a>
     <button class="btn ghost" data-acao="sair">Sair da conta</button>
   </section>
   ${secaoApagarConta()}`;
+}
+
+// ---------- Tema claro / escuro (guardado só neste aparelho) ----------
+export function temaAtual() {
+  try { return localStorage.getItem('tema') || 'auto'; } catch { return 'auto'; }
+}
+export function escolherTema(tema) {
+  try { if (tema === 'auto') localStorage.removeItem('tema'); else localStorage.setItem('tema', tema); } catch { /* fica só agora */ }
+  if (tema === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = tema;
+  // Cor da barra do celular acompanha o tema
+  const escuro = tema === 'dark' || (tema === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', escuro ? '#0E1412' : '#1E7A58');
 }
 
 // Apagar a conta: aviso claro, digitar APAGAR e confirmar a senha (ou o Google)

@@ -3,9 +3,9 @@
    modelos prontos, check-in com foto, tela Hoje, Semana e Histórico. */
 import * as Store from '../store.js';
 import { render, salvar, uid } from '../app.js';
-import { $, ABAS, DIAS, DIAS_NOME, S, SUGESTOES, app, esc, hoje, isoDe, meuUid, mostrarNav, nomeDe, pad, pedidosRecebidos, resumoSemana, semanaAtual, statusDia, subnav, toast } from './base.js';
+import { $, ABAS, DIAS, DIAS_NOME, S, SUGESTOES, app, esc, hoje, isoDe, meuUid, mostrarNav, nomeDe, pad, pedidosRecebidos, resumoSemana, semanaAtual, statusDia, subnav, temTreinoNoDia, toast } from './base.js';
 import { convitAvisos, permissao } from './perfil.js';
-import { campoCarga, diaDe, kgBR, sequencias } from './progresso.js';
+import { campoCarga, convitResumoMes, diaDe, kgBR, sequencias, sugestaoCarga } from './progresso.js';
 
 // ---------- Telas ----------
 export function telaSemConfig() {
@@ -68,11 +68,18 @@ export function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.reg
         ${editavel ? `<button class="chk" data-marcar="${e.id}" aria-pressed="${ok}" aria-label="${ok ? 'Desmarcar' : 'Marcar'} ${esc(e.nome)}">${ok ? '✓' : ''}</button>`
           : `<span class="chk" aria-label="${ok ? 'Feito' : 'Não feito'}">${ok ? '✓' : ''}</span>`}
         <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div>
+          ${editavel && data === isoDe(hoje()) && !ok ? linhaSugestao(e) : ''}
           ${editavel && data === isoDe(hoje()) ? controlesSerie(e, ok) : ''}</div>
         ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : registros[data]?.cargas?.[e.id] ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
     }).join('')}</div></div>`;
 }
 export const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
+
+// Dica de carga embaixo do exercício (some depois que o exercício é feito)
+export function linhaSugestao(e) {
+  const s = sugestaoCarga(e.nome);
+  return s ? `<p class="sugestao small ${s.subir ? 'subir' : ''}">${s.subir ? '📈' : '💡'} ${esc(s.texto)}</p>` : '';
+}
 
 // ---------- Descanso entre séries ----------
 export const DESCANSOS = [30, 45, 60, 75, 90, 120, 150, 180, 240];
@@ -194,10 +201,92 @@ export function marcarSerie(id) {
     pararDescanso();
     if (!(S.registros[data]?.feitos || []).includes(id)) salvar(Store.marcarExercicio(uid(), data, id, true));
     toast(`${e.nome}: séries completas! 💪`);
+    // No modo treino, já vai para o próximo exercício que falta
+    if (S.modo) S.modo.i = proximoPendente(S.modo.i, id);
   } else {
     iniciarDescanso(e);
   }
   render();
+}
+
+// ---------- Modo "treinando agora" (tela cheia, um exercício por vez) ----------
+const exerciciosDeHoje = () => S.plano[hoje().getDay()]?.exercicios || [];
+const feitosHoje = () => S.registros[isoDe(hoje())]?.feitos || [];
+
+// Próximo exercício que ainda falta (dá a volta na lista); -1 quando acabou tudo
+export function proximoPendente(i, acabouDeFazer) {
+  const exs = exerciciosDeHoje();
+  const feitos = new Set([...feitosHoje(), acabouDeFazer]);
+  for (let k = 1; k <= exs.length; k++) {
+    const j = (i + k) % exs.length;
+    if (!feitos.has(exs[j].id)) return j;
+  }
+  return -1;
+}
+
+export function entrarModoTreino() {
+  const exs = exerciciosDeHoje();
+  if (!exs.length) return;
+  const feitos = feitosHoje();
+  const i = exs.findIndex(e => !feitos.includes(e.id));
+  S.modo = { i: i < 0 ? -1 : i };
+  navigator.wakeLock?.request('screen').then(w => { S.modo && (S.modo.wake = w); }, () => {});
+  window.scrollTo(0, 0);
+  render();
+}
+
+export function sairModoTreino() {
+  try { S.modo?.wake?.release(); } catch { /* ok */ }
+  S.modo = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+export function telaModoTreino() {
+  mostrarNav(false);
+  const exs = exerciciosDeHoje();
+  const feitos = feitosHoje();
+  const qtd = exs.filter(e => feitos.includes(e.id)).length;
+  const pct = exs.length ? Math.round(100 * qtd / exs.length) : 0;
+  const topo = `<div class="modo-topo"><button class="mini ghost" data-acao="sair-modo">✕ Sair</button>
+      <span class="small muted tabular">${qtd} de ${exs.length} exercícios</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>`;
+  const i = S.modo.i;
+  if (i < 0 || !exs[i]) {
+    const ck = S.checkins.some(c => c.data === isoDe(hoje()));
+    app.innerHTML = `<div class="modo">${topo}
+      <div class="modo-fim"><div class="modo-emoji" aria-hidden="true">🎉</div><h1>Treino completo!</h1>
+        <p class="muted">${exs.length} ${exs.length === 1 ? 'exercício feito' : 'exercícios feitos'}. Mandou bem!</p>
+        ${ck ? '' : '<button class="btn grande" data-acao="abrir-checkin">📍 Fazer o check-in</button>'}
+        <button class="btn ghost" data-acao="sair-modo">Voltar para o app</button></div></div>`;
+    return;
+  }
+  const e = exs[i];
+  const ok = feitos.includes(e.id);
+  const total = e.series || 1;
+  const feitas = ok ? total : Math.min(seriesFeitas()[e.id] || 0, total);
+  const proximo = exs.slice(i + 1).concat(exs.slice(0, i)).find(x => !feitos.includes(x.id) && x.id !== e.id);
+  const kgHoje = S.registros[isoDe(hoje())]?.cargas?.[e.id]?.kg;
+  app.innerHTML = `<div class="modo">${topo}
+    <div class="modo-ex">
+      <span class="label">Exercício ${i + 1} de ${exs.length}</span>
+      <h1 class="modo-nome">${esc(e.nome)}</h1>
+      <p class="muted tabular">${descricaoEx(e)}</p>
+      ${ok ? '' : linhaSugestao(e)}
+      <div class="modo-carga"><span class="label">Carga de hoje</span>${campoCarga(e, kgHoje)}</div>
+      <div class="modo-series" aria-label="Série ${Math.min(feitas + 1, total)} de ${total}">
+        ${Array.from({ length: total }, (_, k) => `<i class="${k < feitas ? 'on' : ''}"></i>`).join('')}
+      </div>
+      ${ok ? '<p class="ok-txt">✓ Exercício feito</p>'
+        : `<button class="btn modo-btn" data-serie="${e.id}">✓ Série ${feitas + 1} de ${total} feita</button>
+           <button class="btn ghost" data-descansar="${e.id}">⏱ Só descansar ${tempoBR(descansoDe(e))}</button>`}
+    </div>
+    <div class="modo-nav">
+      <button class="mini ghost" data-modo-ir="-1" ${exs.length < 2 ? 'disabled' : ''}>‹ Anterior</button>
+      <span class="small muted grow centro">${proximo ? `Próximo: ${esc(proximo.nome)}` : 'Último que falta'}</span>
+      <button class="mini ghost" data-modo-ir="1" ${exs.length < 2 ? 'disabled' : ''}>Próximo ›</button>
+    </div>
+  </div>`;
 }
 
 // Guarda o tempo ajustado no cronômetro como o novo padrão do exercício
@@ -344,6 +433,7 @@ export function telaHoje() {
     : '<button class="btn grande" data-acao="abrir-checkin">📍 Cheguei na academia · fazer check-in</button>'}</section>
   <section class="block">
     <div class="row between"><span class="label">Treino de hoje</span>${pill}</div>
+    ${total && feitos < total ? `<button class="btn grande" data-acao="modo-treino">▶ ${feitos ? 'Continuar o treino' : 'Começar o treino'}</button>` : ''}
     ${cartaoTreino(d.getDay(), isoDe(d))}
   </section>
   ${Object.keys(S.plano).length ? '' : `<section class="block"><div class="card stack"><h3>Comece montando sua semana</h3>
@@ -356,6 +446,7 @@ export function telaHoje() {
       <div class="stat"><span class="label">Sequência</span><b class="tabular">🔥 ${seq.atual}</b><span class="small muted">${seq.atual === 1 ? 'treino seguido' : 'seguidos'}</span></div>
     </div>
   </section>
+  ${convitResumoMes()}
   ${convitAvisos()}`;
 }
 
@@ -485,15 +576,22 @@ export function detalheDia(iso) {
   const cargas = Object.values(reg.cargas || {}).filter(c => c?.nome);
   const checkins = S.checkins.filter(c => c.data === iso);
   const peso = S.pesos.find(p => p.data === iso);
-  const pill = { done: '<span class="pill ok">Treinou</span>', missed: '<span class="pill bad">Faltou</span>', rest: '<span class="pill">Descanso</span>', future: '<span class="pill wait">Planejado</span>' }[status];
+  const pill = { done: '<span class="pill ok">Treinou</span>', missed: '<span class="pill bad">Faltou</span>', rest: '<span class="pill">Descanso</span>', future: '<span class="pill plan">Planejado</span>' }[status];
   const titulo = `${DIAS_NOME[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}`;
+  // Dia que ainda vai chegar (ou que faltou): mostra o treino que estava/está planejado
+  const planejado = (status === 'future' || status === 'missed') && temTreinoNoDia(S.plano, d) ? plano : null;
   return `<section class="block"><div class="row between"><h2 class="grow">${titulo}</h2>${pill}</div>
+    ${planejado ? `<div class="card stack"><div class="row between"><span class="label">${status === 'missed' ? 'Treino que estava planejado' : 'Treino planejado'}</span>
+        <button class="link" data-aba="semana" data-dia="${d.getDay()}">Editar</button></div>
+      <h3>${esc(planejado.titulo || 'Treino de ' + DIAS_NOME[d.getDay()].toLowerCase())}</h3>
+      ${planejado.exercicios.map(e => `<div class="ex"><div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div></div>`).join('')}
+    </div>` : ''}
     ${nomes.length ? `<div class="card stack"><span class="label">Exercícios feitos</span>
       <ul class="lista">${conhecidos.map(n => `<li>${esc(n)}</li>`).join('')}${outros ? `<li class="muted">${outros === 1 ? 'mais 1 exercício' : `mais ${outros} exercícios`} (já tirado do plano)</li>` : ''}</ul></div>` : ''}
     ${cargas.length ? `<div class="card stack"><span class="label">Cargas</span>
       ${cargas.map(c => `<div class="row between"><span>${esc(c.nome)}</span><b class="tabular">${kgBR(c.kg)} kg</b></div>`).join('')}</div>` : ''}
     ${peso ? `<div class="card row between"><span>Peso registrado</span><b class="tabular">${kgBR(peso.kg)} kg</b></div>` : ''}
     ${checkins.map(c => cartaoCheckin(meuUid(), c, false)).join('')}
-    ${!nomes.length && !checkins.length && !peso ? `<p class="small muted">${status === 'missed' ? 'Tinha treino planejado e nada foi marcado.' : status === 'future' ? 'Ainda não chegou.' : 'Nada registrado neste dia.'}</p>` : ''}
+    ${!nomes.length && !checkins.length && !peso && !planejado ? `<p class="small muted">${status === 'future' ? 'Ainda não chegou.' : 'Nada registrado neste dia.'}</p>` : ''}
   </section>`;
 }

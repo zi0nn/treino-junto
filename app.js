@@ -9,9 +9,9 @@
 import * as Store from './store.js';
 import { $, DIAS_NOME, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, pad, quemAcompanho, toast } from './js/base.js';
 import { TELAS } from './js/juntos.js';
-import { ativarAvisos, estadoAvisos, permissao } from './js/perfil.js';
+import { ativarAvisos, escolherTema, estadoAvisos, permissao, temaAtual } from './js/perfil.js';
 import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
-import { MODELOS, ajustarDescanso, exercicioDeHoje, guardarSeries, iniciarDescanso, marcarSerie, pararDescanso, prepararFoto, salvarDescansoPadrao, seriesFeitas, telaLogin, telaSemConfig } from './js/treino.js';
+import { MODELOS, ajustarDescanso, exercicioDeHoje, guardarSeries, iniciarDescanso, marcarSerie, pararDescanso, prepararFoto, salvarDescansoPadrao, seriesFeitas, telaLogin, telaSemConfig, entrarModoTreino, sairModoTreino, telaModoTreino } from './js/treino.js';
 
 // ---------- Primeiro acesso guiado ----------
 export const temAlgumTreino = () => Object.values(S.plano).some(p => p?.exercicios?.length);
@@ -87,6 +87,21 @@ function pontoDePartida(p) {
   </div>`;
 }
 
+// Gera um arquivo .json com todos os dados da pessoa e baixa no aparelho
+async function baixarMeusDados() {
+  toast('Juntando seus dados…');
+  try {
+    const dados = await Store.exportarDados(uid());
+    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `treino-junto-meus-dados-${isoDe(hoje())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Arquivo baixado: treino-junto-meus-dados.json');
+  } catch (err) { console.error(err); toast(mensagemErro(err)); }
+}
+
 async function concluirBoasVindas() {
   try { await Store.salvarPerfil(uid(), { boasVindas: isoDe(hoje()) }); } catch (err) { toast(mensagemErro(err)); return; }
   S.bv = null;
@@ -135,6 +150,8 @@ export function render() {
     return;
   }
   if (!S.user) return telaLogin();
+  // Modo "treinando agora": tela cheia, sem a barra de abas
+  if (S.modo) { telaModoTreino(); return; }
   if (precisaBoasVindas()) {
     // Mantém o que estava sendo digitado no primeiro acesso
     const r = {}; app.querySelectorAll('input[id]').forEach(i => { r[i.id] = i.value; });
@@ -246,6 +263,31 @@ export function sincronizarAcomp() {
 export const inicioHistorico = () => '2000-01-01';
 
 
+// Tema escolhido neste aparelho (a cor da barra do celular também)
+escolherTema(temaAtual());
+
+// ---------- Registro de erros ----------
+// Erros inesperados vão para o banco (no máximo 5 por vez que o app abre, sem repetir o mesmo)
+const errosEnviados = new Set();
+function reportarErro(mensagem, detalhe) {
+  const msg = String(mensagem || 'Erro sem mensagem');
+  if (errosEnviados.size >= 5 || errosEnviados.has(msg)) return;
+  // Falta de internet e permissões do celular não são erros do app
+  if (/network|offline|Failed to fetch|NotAllowedError|AbortError|quota/i.test(msg)) return;
+  errosEnviados.add(msg);
+  Store.registrarErro({ mensagem: msg, detalhe, tela: S.sub?.[S.aba] || S.aba }).catch(() => {});
+}
+window.addEventListener('error', e => reportarErro(e.message, `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}\n${e.error?.stack || ''}`));
+window.addEventListener('unhandledrejection', e => reportarErro(e.reason?.message || String(e.reason), e.reason?.stack || ''));
+// Erros que o próprio app captura (ex.: falha ao salvar) também são registrados
+const consoleErrorOriginal = console.error.bind(console);
+console.error = (...args) => {
+  consoleErrorOriginal(...args);
+  const err = args.find(a => a instanceof Error) || args[0];
+  if (err?.code === 'permission-denied' || err?.code?.startsWith?.('auth/')) return; // esperados, já mostrados na tela
+  reportarErro(err?.message || String(err), err?.stack || args.map(String).join(' ').slice(0, 1500));
+};
+
 if (Store.configurado) {
   // Voltando do login do Google pelo redirecionamento: mostra o erro, se houver
   Store.resultadoGoogle().catch(err => { console.warn(err); setTimeout(() => mostrarErroLogin(mensagemErro(err)), 500); });
@@ -309,7 +351,11 @@ document.addEventListener('click', e => {
   if (!b) return;
   if (b.dataset.modo) { S.modoLogin = b.dataset.modo; render(); return; }
   if (b.dataset.dia !== undefined && !b.dataset.aba) { S.diaSel = +b.dataset.dia; app.innerHTML = ''; render(); return; }
-  if (b.dataset.aba) { if (b.dataset.dia !== undefined) S.diaSel = +b.dataset.dia; irPara(b.dataset.aba); return; }
+  if (b.dataset.aba) {
+    if (b.dataset.dia !== undefined) S.diaSel = +b.dataset.dia;
+    if (b.dataset.mesResumo) { S.mesResumo = b.dataset.mesResumo; try { localStorage.setItem('resumo-visto', b.dataset.mesResumo); } catch { /* ok */ } }
+    irPara(b.dataset.aba); return;
+  }
 
   // Conexões
   if (b.dataset.aceitar) {
@@ -342,6 +388,12 @@ document.addEventListener('click', e => {
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
     return;
   }
+  if (b.dataset.modoIr && S.modo) {
+    const n = (S.plano[hoje().getDay()]?.exercicios || []).length;
+    if (n) S.modo.i = ((S.modo.i < 0 ? 0 : S.modo.i) + +b.dataset.modoIr + n) % n;
+    render(); return;
+  }
+  if (b.dataset.mesResumo) { S.mesResumo = b.dataset.mesResumo; render(); return; }
   if (b.dataset.diaHist) { S.diaHist = b.dataset.diaHist; render(); return; }
   if (b.dataset.mes) {
     const atual = S.mesHist || isoDe(hoje()).slice(0, 7);
@@ -369,6 +421,7 @@ document.addEventListener('click', e => {
   }
   if (b.dataset.bvModelo) { S.bv = { ...(S.bv || {}), passo: 2, modelo: b.dataset.bvModelo }; render(); return; }
   if (b.dataset.tipoSugestao) { S.tipoSugestao = b.dataset.tipoSugestao; render(); return; }
+  if (b.dataset.tema) { escolherTema(b.dataset.tema); render(); return; }
   if (b.dataset.verConquistas !== undefined) { S.verTodasConquistas = !S.verTodasConquistas; render(); return; }
   if (b.dataset.exSel) { S.exSel = b.dataset.exSel; render(); return; }
   if (b.dataset.apagarFotoProg) {
@@ -433,6 +486,7 @@ document.addEventListener('click', e => {
 
   const acao = b.dataset.acao;
   if (acao === 'abrir-checkin') {
+    if (S.modo) { try { S.modo.wake?.release(); } catch { /* ok */ } S.modo = null; } // do fim do modo treino vai direto para o check-in
     S.checkin = { aberto: true, foto: null, processando: false, enviando: false };
     if (S.sub.juntos === 'mural' && S.aba === 'juntos') render(); else irPara('mural');
     return;
@@ -448,6 +502,9 @@ document.addEventListener('click', e => {
     if (m) usarModelo(m); else render();
     return;
   }
+  if (acao === 'modo-treino') { entrarModoTreino(); return; }
+  if (acao === 'sair-modo') { sairModoTreino(); return; }
+  if (acao === 'baixar-dados') { baixarMeusDados(); return; }
   if (acao === 'apagar-conta') { S.apagar = {}; render(); document.getElementById('apagarTexto')?.focus(); return; }
   if (acao === 'cancelar-apagar') { S.apagar = null; render(); return; }
   if (acao === 'google') {

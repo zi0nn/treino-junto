@@ -8,14 +8,23 @@
   --body: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
+/* Tema escuro: automático (segue o celular) ou escolhido em Perfil › Dados › Aparência.
+   data-theme="light" no <html> força o claro; data-theme="dark" força o escuro. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0E1412; --surface: #17201C; --ink: #E6EEE9; --muted: #93A39B; --line: #26322D;
     --accent: #4CC79A; --accent-soft: #173A2D; --hot: #FF7B63; --hot-soft: #3C1D17;
     --warn: #E3B05A; --warn-soft: #3A2D16;
     --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1412; --surface: #17201C; --ink: #E6EEE9; --muted: #93A39B; --line: #26322D;
+  --accent: #4CC79A; --accent-soft: #173A2D; --hot: #FF7B63; --hot-soft: #3C1D17;
+  --warn: #E3B05A; --warn-soft: #3A2D16;
+  --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -77,6 +86,7 @@ p { margin: 0; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
 .seg button { border: 0; background: transparent; padding: 9px; border-radius: 9px; font-weight: 700; color: var(--muted); }
 .seg button.on { background: var(--accent-soft); color: var(--accent); }
+.seg.tres { grid-template-columns: repeat(3, 1fr); }
 
 /* Semana */
 .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -109,7 +119,8 @@ p { margin: 0; }
 .pill.ok { background: var(--accent-soft); color: var(--accent); }
 .pill.wait { background: var(--warn-soft); color: var(--warn); }
 .pill.bad { background: var(--hot-soft); color: var(--hot); }
-.pill:not(.ok):not(.wait):not(.bad) { background: var(--line); color: var(--muted); }
+.pill.plan { background: var(--plan-soft); color: var(--plan); }
+.pill:not(.ok):not(.wait):not(.bad):not(.plan) { background: var(--line); color: var(--muted); }
 
 /* Calendário do ano */
 .ano-scroll { overflow-x: auto; padding-bottom: 4px; }
@@ -296,3 +307,38 @@ nav.tabs button.on { color: var(--accent); }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Sugestão de carga */
+.sugestao { margin-top: 4px; color: var(--muted); }
+.sugestao.subir { color: var(--accent); font-weight: 600; }
+
+/* Resumo do mês */
+.retro { background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+.ret-topo { display: flex; align-items: center; gap: 14px; }
+.ret-grande { font-family: var(--display); font-size: 56px; font-weight: 800; line-height: 1; color: var(--accent); }
+.ret-grade { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.ret-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.ret-item b { font-family: var(--display); font-size: 20px; }
+.ret-item p { overflow-wrap: anywhere; }
+.ret-icone { font-size: 22px; line-height: 1.2; }
+.ok-txt { color: var(--accent); font-weight: 600; }
+@media (max-width: 360px) { .ret-grade { grid-template-columns: 1fr; } }
+
+/* Modo "treinando agora" */
+.modo { display: flex; flex-direction: column; gap: 14px; min-height: calc(100dvh - 40px); padding-top: 4px; }
+.modo-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.modo-ex { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.modo-nome { font-size: clamp(30px, 9vw, 40px); line-height: 1.05; }
+.modo-carga { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.modo-carga .carga input { width: 80px; font-size: 18px; padding: 10px; }
+.modo-series { display: flex; gap: 8px; margin: 6px 0; }
+.modo-series i { flex: 1; height: 12px; border-radius: 6px; background: var(--line); }
+.modo-series i.on { background: var(--accent); }
+.btn.modo-btn { padding: 22px 16px; font-size: 20px; border-radius: 16px; }
+.modo-nav { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
+.modo-fim { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 14px; text-align: center; }
+.modo-emoji { font-size: 64px; }
+/* Sem a barra de abas (modo treino), o cronômetro desce até o rodapé */
+body:has(#nav[hidden]) .timer { bottom: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+body:has(#nav[hidden]) .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+body:has(#nav[hidden]):has(#timer:not([hidden])) .toast { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }

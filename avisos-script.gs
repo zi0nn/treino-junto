@@ -299,6 +299,10 @@ function fazerBackup() {
   escreverAba(planilha.insertSheet('Sugestões'), ['Quando', 'Pessoa', 'E-mail', 'Tipo', 'Texto', 'Versão'],
     listar('sugestoes').sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0))
       .map(s => [quando(s.criadoEm), s.nome || '', s.email || '', s.tipo || '', s.texto || '', s.versao || '']));
+  // Erros do app: os 300 mais recentes
+  escreverAba(planilha.insertSheet('Erros'), ['Quando', 'Pessoa', 'Tela', 'Mensagem', 'Detalhe', 'Versão', 'Aparelho'],
+    listar('erros').sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0)).slice(0, 300)
+      .map(e => [quando(e.criadoEm), nome[e.uid] || e.uid || '', e.tela || '', e.mensagem || '', String(e.detalhe || '').slice(0, 500), e.versao || '', e.aparelho || '']));
 
   const pasta = pastaDeBackup();
   DriveApp.getFileById(planilha.getId()).moveTo(pasta);

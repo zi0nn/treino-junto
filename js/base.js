@@ -89,7 +89,7 @@ export const ABAS = [
   ['treino', 'Treino', [['hoje', 'Hoje'], ['semana', 'Semana'], ['historico', 'Histórico']]],
   ['corpo', 'Corpo', [['peso', 'Peso e IMC'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]],
   ['juntos', 'Juntos', [['mural', 'Check-in'], ['acompanhar', 'Acompanhar']]],
-  ['evolucao', 'Evolução', [['conquistas', 'Conquistas'], ['frequencia', 'Frequência'], ['cargas', 'Cargas']]],
+  ['evolucao', 'Evolução', [['mes', 'Resumo do mês'], ['conquistas', 'Conquistas'], ['frequencia', 'Frequência'], ['cargas', 'Cargas']]],
   ['perfil', 'Perfil', [['dados', 'Dados'], ['conexoes', 'Conexões'], ['avisos', 'Avisos']]],
 ];
 // Endereço (#nome) → [aba, subaba]. Também aceita os nomes antigos usados nos avisos.

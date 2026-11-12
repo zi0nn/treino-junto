@@ -4,7 +4,7 @@
 import { chaveAcomp } from '../app.js';
 import { DIAS, DIAS_NOME, S, esc, hoje, isoDe, meusAcompanhantes, nomeDe, quemAcompanho, resumoSemana, semanaAtual, statusDia } from './base.js';
 import { telaAvisos, telaConexoes, telaDados } from './perfil.js';
-import { cartaoImc, cartaoMetaCasal, cartaoSequencia, cartaoSequenciaCasal, contextoConquistas, gradeConquistas, graficoFrequencia, graficoPeso, resumoPesoAcomp, semanasFrequencia, telaCargas, telaConquistas, telaFotos, telaFrequencia, telaMedidas, telaPeso, treinosNoMes } from './progresso.js';
+import { cartaoImc, cartaoMetaCasal, cartaoSequencia, cartaoSequenciaCasal, contextoConquistas, gradeConquistas, graficoFrequencia, graficoPeso, resumoPesoAcomp, semanasFrequencia, telaCargas, telaConquistas, telaFotos, telaFrequencia, telaMedidas, telaPeso, telaResumoMes, treinosNoMes } from './progresso.js';
 import { cabecalho, cartaoCheckin, cartaoTreino, legenda, secaoCheckinHoje, telaHistorico, telaHoje, telaSemana } from './treino.js';
 
 // ---------- Juntos ----------
@@ -112,6 +112,6 @@ export const TELAS = {
   treino: { hoje: () => telaHoje(), semana: () => telaSemana(), historico: () => telaHistorico() },
   corpo: { peso: telaPeso, medidas: telaMedidas, fotos: telaFotos },
   juntos: { mural: telaMural, acompanhar: telaAcompanhar },
-  evolucao: { conquistas: telaConquistas, frequencia: telaFrequencia, cargas: telaCargas },
+  evolucao: { mes: telaResumoMes, conquistas: telaConquistas, frequencia: telaFrequencia, cargas: telaCargas },
   perfil: { dados: telaDados, conexoes: telaConexoes, avisos: telaAvisos },
 };

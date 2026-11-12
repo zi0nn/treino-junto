@@ -83,10 +83,27 @@ export function historicoCargas(registros) {
 }
 
 // Campo de carga ao lado do exercício: sugere a última carga usada (ou a do plano)
+// Sugestão de carga para hoje, olhando os treinos anteriores do mesmo exercício:
+// - mesma carga nos 2 últimos treinos → hora de subir um pouco
+// - senão → repetir a última, até ela ficar confortável
+export function passoDeCarga(kg) { return kg <= 10 ? 1 : kg < 60 ? 2.5 : 5; }
+export function sugestaoCarga(nome) {
+  const hojeIso = isoDe(hoje());
+  const antes = (historicoCargas(S.registros)[nome] || []).filter(p => p.data < hojeIso);
+  if (!antes.length) return null;
+  const ultima = antes.at(-1);
+  const penultima = antes.at(-2);
+  if (penultima && penultima.kg === ultima.kg && ultima.kg > 0) {
+    return { kg: ultima.kg + passoDeCarga(ultima.kg), subir: true, ultima,
+      texto: `Tente ${kgBR(ultima.kg + passoDeCarga(ultima.kg))} kg hoje: foram 2 treinos seguidos com ${kgBR(ultima.kg)} kg.` };
+  }
+  return { kg: ultima.kg, subir: false, ultima, texto: `Último treino: ${kgBR(ultima.kg)} kg (${dataCurta(ultima.data)}). Repita até ficar confortável.` };
+}
+
 export function campoCarga(e, kgHoje) {
-  const ultima = historicoCargas(S.registros)[e.nome]?.at(-1)?.kg;
   const doPlano = parseFloat(String(e.carga || '').replace(',', '.'));
-  const sugestao = ultima ?? (Number.isFinite(doPlano) ? doPlano : null);
+  const sug = sugestaoCarga(e.nome);
+  const sugestao = sug?.kg ?? (Number.isFinite(doPlano) ? doPlano : null);
   return `<label class="carga"><span class="sr">Carga usada em ${esc(e.nome)} (kg)</span>
     <input id="carga-${e.id}" data-carga="${e.id}" data-nome="${esc(e.nome)}" type="text" inputmode="decimal" maxlength="5" autocomplete="off"
       value="${kgHoje != null ? kgBR(kgHoje) : ''}" placeholder="${sugestao != null ? kgBR(sugestao) : 'kg'}"><span class="small muted">kg</span></label>`;
@@ -596,6 +613,98 @@ export function telaConquistas() {
   <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
   <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
     ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>`;
+}
+
+// ---------- Resumo do mês (retrospectiva) ----------
+// Mês mostrado: até o dia 5, o mês que passou (o "fechado"); depois, o mês atual até hoje
+export const mesPadraoResumo = () => {
+  const d = hoje();
+  if (d.getDate() > 5) return mesAtual();
+  return isoDe(new Date(d.getFullYear(), d.getMonth() - 1, 15)).slice(0, 7);
+};
+const mesAnterior = mes => { const [a, m] = mes.split('-').map(Number); return isoDe(new Date(a, m - 2, 15)).slice(0, 7); };
+const mesSeguinte = mes => { const [a, m] = mes.split('-').map(Number); return isoDe(new Date(a, m, 15)).slice(0, 7); };
+
+export function resumoDoMes(mes) {
+  const hojeIso = isoDe(hoje());
+  const [a, m] = mes.split('-').map(Number);
+  const dias = Array.from({ length: new Date(a, m, 0).getDate() }, (_, i) => new Date(a, m - 1, i + 1, 12)).filter(d => isoDe(d) <= hojeIso);
+  const st = dias.map(d => statusDia(d));
+  const treinos = st.filter(s => s === 'done').length;
+  const faltas = st.filter(s => s === 'missed').length;
+  const planejados = dias.filter(d => temTreinoNoDia(S.plano, d)).length;
+  // Maior sequência dentro do mês
+  let seq = 0, melhorSeq = 0;
+  st.forEach(s => { if (s === 'done') { seq++; melhorSeq = Math.max(melhorSeq, seq); } else if (s === 'missed') seq = 0; });
+  const checkins = S.checkins.filter(c => c.data.startsWith(mes)).length;
+  // Peso: último registro antes do mês (ou o primeiro do mês) até o último do mês
+  const noMes = S.pesos.filter(p => p.data.startsWith(mes));
+  const antes = S.pesos.filter(p => p.data < mes + '-01').at(-1) || noMes[0];
+  const peso = noMes.length && antes ? { de: antes.kg, para: noMes.at(-1).kg, dif: noMes.at(-1).kg - antes.kg } : null;
+  // Cintura do mesmo jeito
+  const medNoMes = S.medidas.filter(x => x.data.startsWith(mes) && Number.isFinite(x.cintura));
+  const medAntes = S.medidas.filter(x => x.data < mes + '-01' && Number.isFinite(x.cintura)).at(-1) || medNoMes[0];
+  const cintura = medNoMes.length && medAntes ? medNoMes.at(-1).cintura - medAntes.cintura : null;
+  // Carga que mais subiu: maior carga no mês × maior carga antes do mês
+  let destaque = null;
+  Object.entries(historicoCargas(S.registros)).forEach(([nome, pts]) => {
+    const antesKg = Math.max(0, ...pts.filter(p => p.data < mes + '-01').map(p => p.kg));
+    const mesKg = Math.max(0, ...pts.filter(p => p.data.startsWith(mes)).map(p => p.kg));
+    if (antesKg > 0 && mesKg > antesKg) {
+      const pct = Math.round(100 * (mesKg - antesKg) / antesKg);
+      if (!destaque || pct > destaque.pct) destaque = { nome, de: antesKg, para: mesKg, pct };
+    }
+  });
+  const conquistas = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id]?.startsWith(mes));
+  return { treinos, faltas, planejados, melhorSeq, checkins, peso, cintura, destaque, conquistas, terminou: mes < mesAtual() };
+}
+
+export function telaResumoMes() {
+  const mes = S.mesResumo || mesPadraoResumo();
+  const r = resumoDoMes(mes);
+  const ant = resumoDoMes(mesAnterior(mes));
+  const nome = new Date(mes + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const titulo = nome.charAt(0).toUpperCase() + nome.slice(1);
+  const difTreinos = r.treinos - ant.treinos;
+  const pct = r.planejados ? Math.round(100 * Math.min(r.treinos, r.planejados) / r.planejados) : null;
+  const frase = !r.treinos ? 'Nenhum treino registrado neste mês.'
+    : pct !== null && pct >= 90 ? 'Mês impecável. Constância é o que dá resultado 🏆'
+    : pct !== null && pct >= 60 ? 'Bom mês! Dá para chegar ainda mais longe no próximo 💪'
+    : 'Todo treino conta. O próximo mês é uma página em branco 🌱';
+  const item = (icone, valor, texto) => `<div class="ret-item"><span class="ret-icone" aria-hidden="true">${icone}</span><div><b class="tabular">${valor}</b><p class="small muted">${texto}</p></div></div>`;
+  return `${cabecalho()}
+  <section class="block">
+    <div class="row between"><button class="icone" data-mes-resumo="${mesAnterior(mes)}" aria-label="Mês anterior">‹</button>
+      <h2 class="mes-titulo">${titulo}${r.terminou ? '' : ' <span class="small muted">(até hoje)</span>'}</h2>
+      <button class="icone" data-mes-resumo="${mesSeguinte(mes)}" aria-label="Próximo mês" ${mes >= mesAtual() ? 'disabled' : ''}>›</button></div>
+    <div class="card stack retro">
+      <div class="ret-topo"><span class="ret-grande tabular">${r.treinos}</span>
+        <div><b>${r.treinos === 1 ? 'treino' : 'treinos'}</b><p class="small muted">${r.planejados ? `de ${r.planejados} planejados${pct !== null ? ` · ${pct}%` : ''}` : 'no mês'}</p></div></div>
+      <p>${frase}</p>
+      ${ant.treinos || r.treinos ? `<p class="small ${difTreinos >= 0 ? 'ok-txt' : 'muted'}">${difTreinos > 0 ? `▲ ${difTreinos} a mais que o mês anterior` : difTreinos < 0 ? `▼ ${-difTreinos} a menos que o mês anterior` : 'Mesmo número de treinos do mês anterior'}</p>` : ''}
+    </div>
+    <div class="ret-grade">
+      ${item('🔥', r.melhorSeq, r.melhorSeq === 1 ? 'treino seguido (maior sequência)' : 'treinos seguidos (maior sequência)')}
+      ${item('📍', r.checkins, r.checkins === 1 ? 'check-in na academia' : 'check-ins na academia')}
+      ${r.peso ? item('⚖️', `${r.peso.dif <= 0 ? '−' : '+'}${kgBR(Math.abs(r.peso.dif))} kg`, `de ${kgBR(r.peso.de)} para ${kgBR(r.peso.para)} kg`) : ''}
+      ${r.cintura !== null ? item('📏', `${r.cintura <= 0 ? '−' : '+'}${kgBR(Math.abs(r.cintura))} cm`, 'na cintura') : ''}
+      ${r.destaque ? item('🏋️', `+${r.destaque.pct}%`, `${esc(r.destaque.nome)}: de ${kgBR(r.destaque.de)} para ${kgBR(r.destaque.para)} kg`) : ''}
+      ${r.faltas ? item('🗓️', r.faltas, r.faltas === 1 ? 'falta em dia de treino' : 'faltas em dias de treino') : ''}
+    </div>
+    ${r.conquistas.length ? `<span class="label">Conquistas do mês</span>
+      <div class="selos">${r.conquistas.map(q => `<div class="selo"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b></div>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+// Do dia 1 ao 5, a tela Hoje lembra que o resumo do mês que passou está pronto
+export function convitResumoMes() {
+  if (hoje().getDate() > 5) return '';
+  const mes = mesPadraoResumo();
+  if (!resumoDoMes(mes).treinos) return '';
+  let visto = false;
+  try { visto = localStorage.getItem('resumo-visto') === mes; } catch { /* ok */ }
+  if (visto) return '';
+  return `<section class="block"><button class="card row atalho" data-aba="mes" data-mes-resumo="${mes}">📊 <span class="grow">Seu resumo de ${nomeMes(mes)} está pronto</span><span class="link">Ver</span></button></section>`;
 }
 
 export function telaFrequencia() {

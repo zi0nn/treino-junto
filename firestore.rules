@@ -134,6 +134,16 @@ service cloud.firestore {
       allow delete: if logado() && resource.data.uid == request.auth.uid; // ao apagar a conta
     }
 
+    // Registro de erros do app: quem tem login grava em nome próprio; ninguém lê pelo app
+    // (quem mantém o app vê no Console do Firebase e na planilha de backup)
+    match /erros/{id} {
+      allow create: if autenticado()
+        && request.resource.data.keys().hasOnly(['uid', 'mensagem', 'detalhe', 'tela', 'versao', 'aparelho', 'criadoEm'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.mensagem is string && request.resource.data.mensagem.size() <= 300
+        && request.resource.data.detalhe is string && request.resource.data.detalhe.size() <= 1500;
+    }
+
     // Sugestões: qualquer pessoa com conta confirmada envia; ninguém lê pelo app
     // (quem mantém o app vê no Console do Firebase e na planilha de backup)
     match /sugestoes/{id} {

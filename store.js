@@ -328,6 +328,54 @@ export async function copiarAlturaParaConexoes(ids, alturaCm) {
   await Promise.all(ids.map(id => updateDoc(doc(db, 'conexoes', id), { alturaCm })));
 }
 
+// ---------- Baixar meus dados (portabilidade, LGPD) ----------
+// Junta tudo da pessoa num objeto só. As fotos ficam de fora (pesariam demais).
+export async function exportarDados(uid) {
+  const lerTudo = async caminho => (await getDocs(collection(db, ...caminho))).docs.map(d => ({ id: d.id, ...limpar(d.data()) }));
+  const perfil = (await getDoc(doc(db, 'users', uid))).data() || {};
+  const conexoes = [
+    ...(await getDocs(query(collection(db, 'conexoes'), where('atleta', '==', uid)))).docs,
+    ...(await getDocs(query(collection(db, 'conexoes'), where('viewer', '==', uid)))).docs,
+  ].map(d => {
+    const c = d.data();
+    return { comQuem: c.atleta === uid ? c.viewerNome : c.atletaNome, papel: c.atleta === uid ? 'essa pessoa me acompanha' : 'eu acompanho essa pessoa',
+      situacao: c.status, permissoes: c.perm, metaDoMes: c.meta || null };
+  });
+  const checkins = (await lerTudo(['users', uid, 'checkins'])).map(c => ({ ...c, foto: c.temFoto ? '(foto não incluída)' : null }));
+  return {
+    app: 'Treino Junto', geradoEm: new Date().toISOString(), versao: VERSAO,
+    aviso: 'Seus dados no Treino Junto. Fotos de check-in e de antes e depois não estão incluídas.',
+    perfil: limpar(perfil),
+    planoDaSemana: await lerTudo(['users', uid, 'plano']),
+    treinosFeitos: await lerTudo(['users', uid, 'registros']),
+    checkins,
+    pesos: await lerTudo(['users', uid, 'pesos']),
+    medidas: await lerTudo(['users', uid, 'medidas']),
+    conexoes,
+  };
+}
+// Datas do Firestore viram texto legível no arquivo
+function limpar(obj) {
+  return JSON.parse(JSON.stringify(obj, (k, v) => (v && typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v
+    ? new Date(v.seconds * 1000).toISOString() : v)));
+}
+
+// ---------- Registro de erros ----------
+// Quando algo dá errado no aparelho de alguém, guarda o erro para quem mantém o app ver
+// (Console do Firebase › coleção "erros", ou a aba Erros do backup). Não guarda dados de treino.
+export async function registrarErro({ mensagem, detalhe, tela }) {
+  if (!auth?.currentUser) return; // sem login não grava (evita abuso)
+  await addDoc(collection(db, 'erros'), {
+    uid: auth.currentUser.uid,
+    mensagem: String(mensagem || '').slice(0, 300),
+    detalhe: String(detalhe || '').slice(0, 1500),
+    tela: String(tela || '').slice(0, 40),
+    versao: VERSAO,
+    aparelho: String(navigator.userAgent || '').slice(0, 200),
+    criadoEm: serverTimestamp(),
+  });
+}
+
 // ---------- Sugestões ----------
 export const enviarSugestao = (uid, nome, email, tipo, texto) =>
   addDoc(collection(db, 'sugestoes'), {

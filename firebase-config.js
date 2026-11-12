@@ -28,4 +28,4 @@ export const AVISOS_URL = 'https://script.google.com/macros/s/AKfycbyNti1YGwNkW9
 export const RECAPTCHA_KEY = 'COLE_AQUI';
 
 // Versão do app (vai junto das sugestões, para saber de qual versão veio o problema)
-export const VERSAO = '2026.11.12';
+export const VERSAO = '2026.11.12b';
