@@ -123,7 +123,7 @@ Os avisos saem de um **Google Apps Script** na sua conta Google pessoal, a mesma
 | 1 | Login, perfil, plano da semana, checklist do dia | ✅ pronta |
 | 2 | Código de conexão, quem acompanha, permissões | ✅ pronta |
 | 3 | Check-in com foto, reações e recados | ✅ pronta |
-| 4 | Notificações (Apps Script + Firebase Cloud Messaging) | em teste |
+| 4 | Notificações (Apps Script + Firebase Cloud Messaging) | ✅ pronta |
 | 5 | Peso, gráfico e frequência | |
 
 O protótipo de referência está em `prototipo/treino-junto.html`.
