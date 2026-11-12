@@ -103,10 +103,15 @@ const nomeDe = (c, lado) => (lado === 'atleta' ? c.atletaNome : c.viewerNome) ||
 
 // ---------- Regras do dia ----------
 // Treinou = marcou algum exercício OU fez check-in naquele dia
+// Tinha treino planejado nesse dia? (dias antes de o treino ser montado não contam)
+function temTreinoNoDia(planoSemana, d) {
+  const plano = planoSemana[d.getDay()];
+  return !!(plano?.exercicios?.length && (!plano.desde || isoDe(d) >= plano.desde));
+}
+
 function statusDia(d, planoSemana = S.plano, registros = S.registros, checkins = S.checkins) {
   const data = isoDe(d);
-  const plano = planoSemana[d.getDay()];
-  const temTreino = plano && plano.exercicios?.length;
+  const temTreino = temTreinoNoDia(planoSemana, d);
   const feitos = registros[data]?.feitos?.length || 0;
   if (feitos || checkins.some(c => c.data === data)) return 'done';
   if (!temTreino) return 'rest';
@@ -118,7 +123,7 @@ function resumoSemana(planoSemana = S.plano, registros = S.registros, checkins =
   const semana = semanaAtual();
   return {
     feitos: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'done').length,
-    planejados: semana.filter(d => planoSemana[d.getDay()]?.exercicios?.length).length,
+    planejados: semana.filter(d => temTreinoNoDia(planoSemana, d)).length,
     faltas: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'missed').length,
   };
 }
@@ -292,28 +297,29 @@ function telaHoje() {
     : feitos ? '<span class="pill wait">Em andamento</span>'
     : fezCheckin ? '<span class="pill ok">Na academia</span>' : '<span class="pill wait">Ainda não começou</span>';
   const pedidos = pedidosRecebidos();
+  const seq = sequencias(S.plano, S.registros, S.checkins);
   return `${cabecalho()}
   ${pedidos.length ? `<section class="block"><div class="card stack aviso">
     <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
     <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
   ${secaoCheckinHoje()}
-  ${convitAvisos()}
-  ${meusAcompanhantes().map(c => cartaoMetaCasal(c, 'atleta', treinosNoMes(S.registros, S.checkins))).join('')}
-  ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}
-  <section class="block">
-    <div class="grid3">
-      <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}</b><span class="small muted">${r.planejados ? `de ${r.planejados} treinos` : (r.feitos === 1 ? 'treino' : 'treinos')}</span></div>
-      <div class="stat"><span class="label">Hoje</span><b class="tabular">${feitos}/${total}</b><span class="small muted">exercícios</span></div>
-      <div class="stat"><span class="label">Meta</span><b class="tabular">${S.perfil?.metaPeso ?? '—'}</b><span class="small muted">kg</span></div>
-    </div>
-  </section>
   <section class="block">
     <div class="row between"><span class="label">Treino de hoje</span>${pill}</div>
     ${cartaoTreino(d.getDay(), isoDe(d))}
   </section>
   ${Object.keys(S.plano).length ? '' : `<section class="block"><div class="card stack"><h3>Comece montando sua semana</h3>
     <p class="muted small">Na aba Semana você escolhe os exercícios de cada dia. Depois é só marcar aqui o que já fez.</p>
-    <button class="btn" data-aba="semana">Montar minha semana</button></div></section>`}`;
+    <button class="btn" data-aba="semana">Montar minha semana</button></div></section>`}
+  <section class="block">
+    <div class="grid3">
+      <div class="stat"><span class="label">Semana</span><b class="tabular">${r.feitos}</b><span class="small muted">${r.planejados ? `de ${r.planejados} ${r.planejados === 1 ? 'treino' : 'treinos'}` : (r.feitos === 1 ? 'treino' : 'treinos')}</span></div>
+      <div class="stat"><span class="label">Hoje</span><b class="tabular">${feitos}/${total}</b><span class="small muted">exercícios</span></div>
+      <div class="stat"><span class="label">Sequência</span><b class="tabular">🔥 ${seq.atual}</b><span class="small muted">${seq.atual === 1 ? 'treino seguido' : 'seguidos'}</span></div>
+    </div>
+  </section>
+  ${convitAvisos()}
+  ${meusAcompanhantes().map(c => cartaoMetaCasal(c, 'atleta', treinosNoMes(S.registros, S.checkins))).join('')}
+  ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}`;
 }
 
 function legenda() {
@@ -479,7 +485,7 @@ function semanasFrequencia(planoSemana, registros, checkins, quantas = SEMANAS_H
     for (let i = 0; i < 7; i++) {
       const d = new Date(seg); d.setDate(seg.getDate() + i);
       if (isoDe(d) > hojeIso) break;
-      if (planoSemana[d.getDay()]?.exercicios?.length) planejados++;
+      if (temTreinoNoDia(planoSemana, d)) planejados++;
       if (statusDia(d, planoSemana, registros, checkins) === 'done') feitos++;
     }
     semanas.push({ inicio: isoDe(seg), feitos, planejados, atual: n === 0 });
@@ -671,11 +677,14 @@ function contextoConquistas(planoSemana, registros, checkins, pesos, alturaCm) {
 // Selos: desbloqueados com a data (guardada no perfil) e os que faltam, apagados
 function gradeConquistas(ctx, guardadas, mostrarBloqueadas) {
   const lista = CONQUISTAS.filter(q => guardadas?.[q.id] || q.ok(ctx));
-  const bloqueadas = mostrarBloqueadas ? CONQUISTAS.filter(q => !lista.includes(q)) : [];
+  const todasBloqueadas = mostrarBloqueadas ? CONQUISTAS.filter(q => !lista.includes(q)) : [];
+  // Por padrão mostra só as próximas 3 a conquistar, para não encher a tela de selos apagados
+  const bloqueadas = S.verTodasConquistas ? todasBloqueadas : todasBloqueadas.slice(0, 3);
   if (!lista.length && !bloqueadas.length) return '<p class="small muted">Nenhuma conquista ainda.</p>';
   return `<div class="selos">${lista.map(q => `<div class="selo"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b>
       <span class="small muted">${guardadas?.[q.id] ? dataCurta(guardadas[q.id]) : esc(q.desc)}</span></div>`).join('')}
-    ${bloqueadas.map(q => `<div class="selo bloqueado"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b><span class="small muted">${esc(q.desc)}</span></div>`).join('')}</div>`;
+    ${bloqueadas.map(q => `<div class="selo bloqueado"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b><span class="small muted">${esc(q.desc)}</span></div>`).join('')}</div>
+    ${todasBloqueadas.length > 3 ? `<button class="link" data-ver-conquistas>${S.verTodasConquistas ? 'Mostrar menos' : `Ver todas as ${CONQUISTAS.length} conquistas`}</button>` : ''}`;
 }
 
 function cartaoSequencia(ctx) {
@@ -736,16 +745,19 @@ function cartaoMetaCasal(c, lado, feitos, nomeOutro) {
         ? `<p class="small">Combine com ${esc(outro)} quantos treinos você vai fazer em ${nomeMes(mes)} e qual é a recompensa quando bater.</p>`
         : `<p class="small">Combine com ${esc(outro)} quantos treinos fazer em ${nomeMes(mes)} e qual é a recompensa quando bater.</p>`)}${form}</div></section>`;
   }
+  // Quem acompanha pode não ver todos os treinos (permissões): a marca "batida" vale de qualquer jeito
+  if (meta.batida && feitos !== null) feitos = Math.max(feitos, meta.treinos);
   const pct = feitos === null ? 0 : Math.min(100, Math.round(100 * feitos / meta.treinos));
-  const batida = feitos !== null && feitos >= meta.treinos;
+  const batida = meta.batida || (feitos !== null && feitos >= meta.treinos);
+  const falta = feitos === null ? 0 : meta.treinos - feitos;
   return `<section class="block"><div class="row between"><span class="label">Meta do casal · ${nomeMes(mes)}</span>
       <button class="link" data-editar-meta="${c.id}">Editar</button></div>
     <div class="card stack ${batida ? 'aviso' : ''}">
-      <div class="row between"><h3 class="grow">${meta.treinos} treinos</h3>${feitos === null ? '' : `<span class="small tabular">${feitos}/${meta.treinos}</span>`}</div>
-      ${feitos === null ? `<p class="small muted">Para ver o progresso, ${esc(outro)} precisa liberar ver treinos ou check-ins.</p>` : `<div class="bar"><i style="width:${pct}%"></i></div>`}
+      <div class="row between"><h3 class="grow">${meta.treinos} ${meta.treinos === 1 ? 'treino' : 'treinos'}</h3>${feitos === null ? '' : `<span class="small tabular">${Math.min(feitos, meta.treinos)}/${meta.treinos}</span>`}</div>
+      ${feitos === null && !batida ? `<p class="small muted">Para ver o progresso, ${esc(outro)} precisa liberar ver treinos ou check-ins.</p>` : `<div class="bar"><i style="width:${batida ? 100 : pct}%"></i></div>`}
       <p class="small">🎁 ${esc(meta.recompensa || 'Recompensa a combinar')}</p>
       ${batida ? `<p><b>Meta batida! 🎉</b> ${lado === 'atleta' ? `Hora de cobrar de ${esc(outro)}.` : 'Hora de cumprir a recompensa.'}</p>`
-        : feitos !== null ? `<p class="small muted">Faltam ${meta.treinos - feitos} ${meta.treinos - feitos === 1 ? 'treino' : 'treinos'}.</p>` : ''}
+        : feitos !== null ? `<p class="small muted">${falta === 1 ? 'Falta 1 treino' : `Faltam ${falta} treinos`}.</p>` : ''}
     </div></section>`;
 }
 
@@ -1103,7 +1115,7 @@ function comecarEscutas(user) {
         try { await Store.criarPerfil(user.uid, user.nome || user.email.split('@')[0], user.email); } catch (e) { erro(e); }
         return;
       }
-      S.perfil = perfil; render(); verificarConquistas();
+      S.perfil = perfil; render(); migrarPlanoAntigo(); verificarConquistas();
     }, erro),
     Store.escutarPlano(user.uid, plano => { S.plano = plano; S.carregado.plano = true; aposMudanca(); }, erro),
     Store.escutarRegistros(user.uid, desde, registros => { S.registros = registros; S.carregado.registros = true; aposMudanca(); }, erro),
@@ -1122,7 +1134,7 @@ function comecarEscutas(user) {
 }
 
 // Meus dados mudaram: redesenha e confere conquistas e metas do casal
-function aposMudanca() { render(); verificarConquistas(); verificarMetas(); }
+function aposMudanca() { render(); migrarPlanoAntigo(); verificarConquistas(); verificarMetas(); }
 
 // Escuta os dados da pessoa que estou acompanhando. Refaz a escuta quando a pessoa
 // muda, aceita o pedido ou liga/desliga as permissões de treinos e check-ins.
@@ -1204,7 +1216,23 @@ if (Store.configurado) {
 
 // ---------- Ações ----------
 const uid = () => S.user.uid;
-const planoDoDia = dia => structuredClone(S.plano[dia] || { titulo: '', exercicios: [] });
+// Cópia do plano de um dia para editar. Se o dia era descanso, o treino passa a valer a partir de hoje.
+function planoDoDia(dia) {
+  const p = structuredClone(S.plano[dia] || { titulo: '', exercicios: [] });
+  if (!p.exercicios?.length) p.desde = isoDe(hoje());
+  return p;
+}
+
+// Planos antigos (antes do campo "desde") passam a valer a partir da criação da conta
+let planoMigrado = false;
+function migrarPlanoAntigo() {
+  if (planoMigrado || !S.perfil?.criadoEm?.toDate || !S.carregado.plano) return;
+  planoMigrado = true;
+  const desde = isoDe(S.perfil.criadoEm.toDate());
+  Object.entries(S.plano).forEach(([dia, p]) => {
+    if (p.exercicios?.length && !p.desde) Store.salvarDia(uid(), dia, { ...p, desde }).catch(console.warn);
+  });
+}
 
 async function salvar(promessa, sucesso) {
   try { await promessa; if (sucesso) toast(sucesso); } catch (err) { console.error(err); toast(mensagemErro(err)); }
@@ -1261,6 +1289,7 @@ document.addEventListener('click', e => {
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
     return;
   }
+  if (b.dataset.verConquistas !== undefined) { S.verTodasConquistas = !S.verTodasConquistas; render(); return; }
   if (b.dataset.exSel) { S.exSel = b.dataset.exSel; render(); return; }
   if (b.dataset.apagarFotoProg) {
     const data = b.dataset.apagarFotoProg, chave = 'fp:' + data;
@@ -1423,7 +1452,8 @@ document.addEventListener('change', e => {
   }
   if (t.id === 'copiarPara' && t.value !== '') {
     const destino = +t.value, origem = planoDoDia(S.diaSel);
-    const copia = { titulo: origem.titulo, exercicios: origem.exercicios.map(x => ({ ...x, id: novoId() })) };
+    // O dia de destino mantém o "desde" que já tinha; se era descanso, passa a valer a partir de hoje
+    const copia = { titulo: origem.titulo, exercicios: origem.exercicios.map(x => ({ ...x, id: novoId() })), desde: planoDoDia(destino).desde };
     salvar(Store.salvarDia(uid(), destino, copia), `Treino copiado para ${DIAS_NOME[destino].toLowerCase()}`);
     t.value = '';
   }
@@ -1552,6 +1582,10 @@ document.addEventListener('submit', async e => {
       await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), metaPeso: Number.isFinite(meta) ? meta : null, alturaCm: altura });
       // Quem acompanha precisa da altura para ver o IMC
       await Store.copiarAlturaParaConexoes(meusAcompanhantes().map(c => c.id), altura);
+      // Quem me acompanha (e quem eu acompanho) passa a ver o nome novo
+      const desatualizadas = S.conexoes.filter(c => (c.atleta === uid() ? c.atletaNome : c.viewerNome) !== nome.slice(0, 40)
+        && (c.atleta === uid() ? c.status === 'aceita' : true));
+      await Store.atualizarNomeNasConexoes(uid(), desatualizadas, nome.slice(0, 40));
       toast('Dados salvos');
     } catch (err) { console.error(err); toast(mensagemErro(err)); }
   }

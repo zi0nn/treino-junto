@@ -122,11 +122,20 @@ export function escutarPlano(uid, callback, onError) {
   }, onError);
 }
 
+// desde = 'AAAA-MM-DD' do dia em que esse dia da semana passou a ter treino.
+// Dias anteriores não contam como falta (ex.: montou a semana numa quinta).
 export const salvarDia = (uid, dia, dados) =>
   setDoc(doc(db, 'users', uid, 'plano', String(dia)), {
     titulo: String(dados.titulo || '').slice(0, 60),
     exercicios: dados.exercicios || [],
+    ...(dados.desde ? { desde: dados.desde } : {}),
   });
+
+// Mantém meu nome igual em todas as conexões quando eu troco no Perfil
+export async function atualizarNomeNasConexoes(meuUid, conexoes, nome) {
+  await Promise.all(conexoes.map(c => updateDoc(doc(db, 'conexoes', c.id),
+    c.atleta === meuUid ? { atletaNome: nome } : { viewerNome: nome })));
+}
 
 // ---------- Registros (o que foi feito em cada dia) ----------
 

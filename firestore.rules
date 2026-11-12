@@ -45,7 +45,8 @@ service cloud.firestore {
         allow read: if eu(uid) || liberado(uid, 'treinos');
         allow delete: if eu(uid);
         allow write: if eu(uid) && dia in ['0', '1', '2', '3', '4', '5', '6']
-          && request.resource.data.keys().hasOnly(['titulo', 'exercicios'])
+          && request.resource.data.keys().hasOnly(['titulo', 'exercicios', 'desde'])
+          && (!('desde' in request.resource.data) || request.resource.data.desde.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
           && request.resource.data.titulo is string && request.resource.data.titulo.size() <= 60
           && request.resource.data.exercicios is list && request.resource.data.exercicios.size() <= 40;
       }
@@ -167,6 +168,11 @@ service cloud.firestore {
             || (request.resource.data.alturaCm is number && request.resource.data.alturaCm >= 100 && request.resource.data.alturaCm <= 230))
         && request.resource.data.atletaNome is string && request.resource.data.atletaNome.size() <= 40
         && permValida(request.resource.data.perm);
+
+      // Quem acompanha só pode atualizar o próprio nome (quando troca no Perfil)
+      allow update: if logado() && resource.data.viewer == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewerNome'])
+        && request.resource.data.viewerNome is string && request.resource.data.viewerNome.size() <= 40;
 
       // Meta do casal: qualquer um dos dois combina ou muda a meta do mês
       allow update: if ehParte() && resource.data.status == 'aceita'

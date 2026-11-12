@@ -149,9 +149,12 @@ function resumoSemanal(pessoas, conexoes) {
   pessoas.forEach(u => {
     try {
       const plano = {};
-      listar('users/' + u.id + '/plano').forEach(p => { plano[p.id] = (p.exercicios || []).length > 0; });
-      // segunda = 1 ... domingo = 0
-      const planejados = semana.filter((d, i) => plano[String((i + 1) % 7)]).length;
+      listar('users/' + u.id + '/plano').forEach(p => { plano[p.id] = { tem: (p.exercicios || []).length > 0, desde: p.desde || '' }; });
+      // segunda = 1 ... domingo = 0; dias antes de o treino ser montado não contam
+      const planejados = semana.filter((d, i) => {
+        const p = plano[String((i + 1) % 7)];
+        return p && p.tem && (!p.desde || d >= p.desde);
+      }).length;
       const treinou = {};
       buscar('users/' + u.id, 'checkins', 'data', semana[0], 'GREATER_THAN_OR_EQUAL').forEach(c => { treinou[c.data] = true; });
       semana.forEach(d => { const r = lerDoc('users/' + u.id + '/registros/' + d); if (r && (r.feitos || []).length) treinou[d] = true; });
