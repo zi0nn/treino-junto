@@ -57,6 +57,13 @@ Tudo aqui é gratuito e não pede cartão. Use **as suas contas pessoais**, não
 2. Embaixo à esquerda, escreva um resumo (ex.: "Etapa 1: treinos da semana") e clique em **Commit to main**.
 3. Clique em **Push origin**. Em 1 ou 2 minutos o site atualiza.
 
+### Se o site não atualizar
+
+1. Abra a aba **Actions** do repositório no GitHub.
+2. Se a última execução estiver com **X vermelho**, clique nela e em **Re-run all jobs**.
+3. Se ficar parada em **Queued** por mais de 10 minutos, clique nela, depois em **Cancel workflow**, e faça um novo commit e push.
+4. No celular, feche o app por completo e abra de novo para pegar a versão nova.
+
 ## 6. Usar
 
 1. Abra o endereço do site e toque em **Criar conta**.
@@ -75,8 +82,8 @@ Tudo aqui é gratuito e não pede cartão. Use **as suas contas pessoais**, não
 | Etapa | O que entra | Situação |
 |---|---|---|
 | 1 | Login, perfil, plano da semana, checklist do dia | ✅ pronta |
-| 2 | Código de conexão, quem acompanha, permissões | próxima |
-| 3 | Check-in com foto, reações e recados | |
+| 2 | Código de conexão, quem acompanha, permissões | ✅ pronta |
+| 3 | Check-in com foto, reações e recados | ✅ pronta |
 | 4 | Notificações (Apps Script + Firebase Cloud Messaging) | |
 | 5 | Peso, gráfico e frequência | |
 
