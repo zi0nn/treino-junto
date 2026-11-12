@@ -22,3 +22,10 @@ export const VAPID_KEY = 'BPlLJMcHX9fFPJMaiVrBxHKkdbSUYywWCm-zPOgtEOlo6OmmEGctyK
 
 // Endereço do script de avisos (Google Apps Script publicado como App da Web, termina em /exec)
 export const AVISOS_URL = 'https://script.google.com/macros/s/AKfycby219j_ekFMpjmuSVVngmd3TbuyypOj4-viJFEBEckiYTnc02wNPbcyZXjqTrjwIZeSWw/exec';
+
+// Proteção contra abuso (App Check). Chave PÚBLICA do reCAPTCHA v3 (pode ficar à mostra).
+// Enquanto estiver "COLE_AQUI", o app funciona normalmente, só sem essa proteção. Veja COMO-CONFIGURAR.md, seção 8.
+export const RECAPTCHA_KEY = 'COLE_AQUI';
+
+// Versão do app (vai junto das sugestões, para saber de qual versão veio o problema)
+export const VERSAO = '2026.11.12';

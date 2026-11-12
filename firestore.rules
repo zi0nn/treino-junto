@@ -25,7 +25,7 @@ service cloud.firestore {
 
     function perfilValido() {
       let d = request.resource.data;
-      return d.keys().hasOnly(['nome', 'email', 'codigo', 'metaPeso', 'criadoEm', 'avisos', 'alturaCm', 'horaLembrete', 'conquistas'])
+      return d.keys().hasOnly(['nome', 'email', 'codigo', 'metaPeso', 'criadoEm', 'avisos', 'alturaCm', 'horaLembrete', 'conquistas', 'boasVindas'])
         && (!('conquistas' in d) || (d.conquistas is map && d.conquistas.size() <= 60))
         && d.nome is string && d.nome.size() > 0 && d.nome.size() <= 40
         && d.codigo is string
@@ -43,6 +43,8 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/codigos/$(request.resource.data.codigo)).data.uid == uid;
       // O código de conexão nunca muda depois de criado
       allow update: if eu(uid) && perfilValido() && request.resource.data.codigo == resource.data.codigo;
+      // Apagar a conta (LGPD): a própria pessoa apaga o perfil
+      allow delete: if eu(uid);
 
       match /plano/{dia} {
         allow read: if eu(uid) || liberado(uid, 'treinos');
@@ -129,6 +131,17 @@ service cloud.firestore {
       allow create: if autenticado() && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
         && codigo.matches('^FIT-[A-Z0-9]{4}$');
+      allow delete: if logado() && resource.data.uid == request.auth.uid; // ao apagar a conta
+    }
+
+    // Sugestões: qualquer pessoa com conta confirmada envia; ninguém lê pelo app
+    // (quem mantém o app vê no Console do Firebase e na planilha de backup)
+    match /sugestoes/{id} {
+      allow create: if logado()
+        && request.resource.data.keys().hasOnly(['uid', 'nome', 'email', 'tipo', 'texto', 'versao', 'criadoEm'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.tipo in ['ideia', 'problema']
+        && request.resource.data.texto is string && request.resource.data.texto.size() > 0 && request.resource.data.texto.size() <= 1000;
     }
 
     // Aparelhos que recebem avisos: o id é o código do aparelho no Firebase Cloud Messaging.
@@ -202,7 +215,10 @@ service cloud.firestore {
           && request.resource.data.de == request.auth.uid
           && request.resource.data.texto is string
           && request.resource.data.texto.size() > 0 && request.resource.data.texto.size() <= 300;
-        allow delete: if logado() && resource.data.de == request.auth.uid;
+        // Cada um apaga os próprios recados; ao apagar a conta, a pessoa apaga a conversa inteira
+        allow delete: if logado() && (resource.data.de == request.auth.uid
+          || get(/databases/$(database)/documents/conexoes/$(id)).data.atleta == request.auth.uid
+          || get(/databases/$(database)/documents/conexoes/$(id)).data.viewer == request.auth.uid);
       }
     }
   }

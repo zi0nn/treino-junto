@@ -6,7 +6,7 @@
    Os dados quem guarda é o próprio Firebase, no aparelho.
    Ao publicar uma versão nova, aumente o número em CACHE. */
 
-const CACHE = 'treino-junto-v10';
+const CACHE = 'treino-junto-v11';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/10.12.2';
 const FILES = [
   './',
@@ -22,6 +22,8 @@ const FILES = [
   `${FIREBASE}/firebase-auth.js`,
   `${FIREBASE}/firebase-firestore.js`,
   `${FIREBASE}/firebase-messaging.js`,
+  `${FIREBASE}/firebase-app-check.js`,
+  './privacidade.html',
 ];
 const EXTERNOS = [FIREBASE, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 

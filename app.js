@@ -23,6 +23,11 @@ const ERROS = {
   'auth/too-many-requests': 'Muitas tentativas. Espere alguns minutos e tente de novo.',
   'auth/network-request-failed': 'Sem internet. Confira a conexão e tente de novo.',
   'permission-denied': 'Sem permissão para isso. Confira se as regras do Firestore foram publicadas.',
+  'auth/popup-closed-by-user': 'A janela do Google foi fechada antes de terminar.',
+  'auth/requires-recent-login': 'Por segurança, saia e entre de novo antes de fazer isso.',
+  'auth/unauthorized-domain': 'Este endereço ainda não foi liberado para entrar com o Google (Firebase › Authentication › Configurações › Domínios autorizados).',
+  'auth/operation-not-allowed': 'Esse jeito de entrar ainda não foi ativado no Firebase.',
+  'auth/account-exists-with-different-credential': 'Esse e-mail já tem conta com senha. Entre com e-mail e senha.',
 };
 const mensagemErro = err => ERROS[err?.code] || err?.message || 'Algo deu errado. Tente de novo.';
 
@@ -195,7 +200,12 @@ function telaLogin() {
     <p class="erro" id="loginErro" hidden></p>
     <button class="btn" type="submit" id="loginBtn">${criar ? 'Criar conta' : 'Entrar'}</button>
     ${criar ? '' : '<button class="link" type="button" data-acao="esqueci">Esqueci minha senha</button>'}
-  </form>`;
+  </form>
+  <div class="ou"><span>ou</span></div>
+  <button class="btn ghost google" data-acao="google">
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1.1-3.8 1.1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.7 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.1a11 11 0 0 0 0 9.8l3.6-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.1l3.6 2.8C6.6 7.4 9.1 5.4 12 5.4z"/></svg>
+    Entrar com Google</button>
+  <p class="small muted centro">Ao entrar, você concorda com a nossa <a class="link" href="privacidade.html">política de privacidade</a>.</p>`;
 }
 
 // Título da tela + subabas. Na tela Hoje o título é o "Oi, fulano".
@@ -689,7 +699,44 @@ function telaDados() {
       <button class="btn" type="submit">Salvar</button>
     </form>
   </section>
-  <section class="block"><button class="btn ghost" data-acao="sair">Sair da conta</button></section>`;
+  <section class="block"><span class="label">Mandar sugestão</span>
+    <form id="formSugestao" class="card stack">
+      <div class="seg" role="radiogroup" aria-label="Tipo">
+        <button type="button" role="radio" aria-checked="${S.tipoSugestao !== 'problema'}" class="${S.tipoSugestao !== 'problema' ? 'on' : ''}" data-tipo-sugestao="ideia">💡 Ideia</button>
+        <button type="button" role="radio" aria-checked="${S.tipoSugestao === 'problema'}" class="${S.tipoSugestao === 'problema' ? 'on' : ''}" data-tipo-sugestao="problema">🐞 Problema</button>
+      </div>
+      <div class="field"><label class="label" for="sugestaoTexto">${S.tipoSugestao === 'problema' ? 'O que aconteceu? Em qual tela?' : 'O que podia ser melhor?'}</label>
+        <textarea id="sugestaoTexto" class="input" rows="4" maxlength="1000" placeholder="Escreva aqui"></textarea></div>
+      <button class="btn" type="submit">Enviar</button>
+    </form>
+  </section>
+  <section class="block">
+    <a class="btn ghost" href="privacidade.html">🔒 Privacidade: quem vê o quê</a>
+    <button class="btn ghost" data-acao="sair">Sair da conta</button>
+  </section>
+  ${secaoApagarConta()}`;
+}
+
+// Apagar a conta: aviso claro, digitar APAGAR e confirmar a senha (ou o Google)
+function secaoApagarConta() {
+  const a = S.apagar;
+  if (!a) return `<section class="block"><button class="link perigo" data-acao="apagar-conta">Apagar minha conta e meus dados</button></section>`;
+  const google = Store.provedorAtual() === 'google.com';
+  return `<section class="block"><div class="card stack perigo-card">
+    <h2>Apagar minha conta</h2>
+    <p>Isso apaga <b>para sempre</b>: perfil, treinos, check-ins e fotos, peso, medidas, fotos de antes e depois, conexões, recados e o seu login.
+      Quem te acompanha deixa de ver tudo na hora. <b>Não tem como desfazer.</b></p>
+    ${a.andamento ? `<p class="small"><b>${esc(a.andamento)}</b></p>` : `
+    <form id="formApagar" class="stack">
+      <div class="field"><label class="label" for="apagarTexto">Para confirmar, digite APAGAR</label>
+        <input id="apagarTexto" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+      ${google ? '<p class="small muted">Vamos pedir para você entrar com o Google de novo, por segurança.</p>'
+        : `<div class="field"><label class="label" for="apagarSenha">Sua senha</label><input id="apagarSenha" type="password" autocomplete="current-password"></div>`}
+      <p class="erro" id="apagarErro" hidden></p>
+      <div class="row"><button class="btn ghost" type="button" data-acao="cancelar-apagar">Cancelar</button>
+        <button class="btn perigo-btn" type="submit">Apagar tudo</button></div>
+    </form>`}
+  </div></section>`;
 }
 
 function telaAvisos() {
@@ -1448,6 +1495,69 @@ const TELAS = {
   perfil: { dados: telaDados, conexoes: telaConexoes, avisos: telaAvisos },
 };
 
+// ---------- Primeiro acesso guiado ----------
+const temAlgumTreino = () => Object.values(S.plano).some(p => p?.exercicios?.length);
+// Continua no passo a passo enquanto ele estiver aberto (o modelo escolhido no passo 2 já cria treinos)
+const precisaBoasVindas = () => S.perfil && !S.perfil.boasVindas
+  && (S.bv?.passo > 1 || (S.carregado.plano && !temAlgumTreino()));
+
+// Quem já usava o app antes do primeiro acesso guiado não precisa passar por ele
+let boasVindasMigrado = false;
+function migrarBoasVindas() {
+  if (S.bv || boasVindasMigrado || !S.perfil || S.perfil.boasVindas || !S.carregado.plano || !temAlgumTreino()) return;
+  boasVindasMigrado = true;
+  Store.salvarPerfil(uid(), { boasVindas: isoDe(hoje()) }).catch(console.warn);
+}
+
+function telaBoasVindas() {
+  mostrarNav(false);
+  const passo = S.bv?.passo || 1;
+  const p = S.perfil || {};
+  const barra = `<div class="passos" aria-label="Passo ${passo} de 3">${[1, 2, 3].map(n => `<i class="${n <= passo ? 'on' : ''}"></i>`).join('')}</div>`;
+  let corpo;
+  if (passo === 1) {
+    corpo = `<h1>Bem-vinda(o), ${esc((p.nome || '').split(' ')[0])}! 👋</h1>
+      <p class="muted">Três passos rápidos e você já sai com a semana montada. Pode pular o que quiser.</p>
+      <form id="formBv1" class="card stack">
+        <div class="field"><label class="label" for="bvNome">Como quer ser chamada(o)?</label><input id="bvNome" maxlength="40" value="${esc(p.nome)}"></div>
+        <div class="grid3" style="grid-template-columns:1fr 1fr">
+          <div class="field"><label class="label" for="bvAltura">Altura (cm)</label><input id="bvAltura" inputmode="numeric" maxlength="4" placeholder="165" value="${p.alturaCm ?? ''}"></div>
+          <div class="field"><label class="label" for="bvMeta">Meta de peso (kg)</label><input id="bvMeta" inputmode="decimal" maxlength="6" placeholder="Opcional" value="${p.metaPeso != null ? kgBR(p.metaPeso) : ''}"></div>
+        </div>
+        <p class="small muted">A altura serve para o IMC. A meta você pode definir depois, com a ajuda da faixa de peso saudável.</p>
+        <button class="btn" type="submit">Continuar</button>
+      </form>`;
+  } else if (passo === 2) {
+    const sel = S.bv.modelo ?? 'sozinho';
+    corpo = `<h1>Como quer treinar?</h1>
+      <p class="muted">Escolha um modelo para começar. Dá para editar qualquer exercício depois, em Treino › Semana.</p>
+      <div class="stack">
+        ${MODELOS.map(m => `<button class="card modelo-opcao ${sel === m.id ? 'on' : ''}" data-bv-modelo="${m.id}" aria-pressed="${sel === m.id}">
+          <h3>${esc(m.nome)}</h3><p class="small muted">${esc(m.desc)}</p></button>`).join('')}
+        <button class="card modelo-opcao ${sel === 'sozinho' ? 'on' : ''}" data-bv-modelo="sozinho" aria-pressed="${sel === 'sozinho'}">
+          <h3>Vou montar sozinha(o)</h3><p class="small muted">Já tenho uma ficha da academia e vou passar para o app.</p></button>
+        <button class="btn" data-acao="bv-2">Continuar</button>
+      </div>`;
+  } else {
+    const e = estadoAvisos();
+    corpo = `<h1>Treine junto 🤝</h1>
+      <p class="muted">O app fica melhor com alguém do lado: a pessoa vê seus check-ins, reage e manda força. Você escolhe o que ela pode ver.</p>
+      <div class="card stack"><span class="label">Seu código</span><div class="code">${esc(p.codigo || '—')}</div>
+        <p class="small muted">Passe esse código para quem vai te incentivar. Ou, se você quer acompanhar alguém, peça o código dessa pessoa e digite em Perfil › Conexões.</p>
+        <button class="btn sm ghost" data-acao="copiar">Copiar código</button></div>
+      ${e.pode && !e.ativo ? '<button class="btn ghost" data-acao="ativar-avisos">🔔 Ativar avisos no celular</button>' : ''}
+      <button class="btn" data-acao="bv-fim">Começar a treinar</button>`;
+  }
+  app.innerHTML = `<div class="stack boas-vindas">${barra}${corpo}
+    ${passo < 3 ? '<button class="link" data-acao="bv-pular">Pular e ir direto para o app</button>' : ''}</div>`;
+}
+
+async function concluirBoasVindas() {
+  try { await Store.salvarPerfil(uid(), { boasVindas: isoDe(hoje()) }); } catch (err) { toast(mensagemErro(err)); return; }
+  S.bv = null;
+  irPara('hoje');
+}
+
 // Conta criada, mas o e-mail ainda não foi confirmado
 function telaVerificar() {
   mostrarNav(false);
@@ -1490,11 +1600,18 @@ function render() {
     return;
   }
   if (!S.user) return telaLogin();
+  if (precisaBoasVindas()) {
+    // Mantém o que estava sendo digitado no primeiro acesso
+    const r = {}; app.querySelectorAll('input[id]').forEach(i => { r[i.id] = i.value; });
+    telaBoasVindas();
+    Object.entries(r).forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+    return;
+  }
   mostrarNav(true);
   // Mantém o que estava sendo digitado quando os dados mudam no banco
   const foco = document.activeElement?.id;
   const rascunho = {};
-  app.querySelectorAll('input[id]:not([type=file]):not([type=checkbox])').forEach(i => { rascunho[i.id] = i.value; });
+  app.querySelectorAll('input[id]:not([type=file]):not([type=checkbox]), textarea[id]').forEach(i => { rascunho[i.id] = i.value; });
   app.innerHTML = TELAS[S.aba][S.sub[S.aba]]();
   for (const [id, valor] of Object.entries(rascunho)) {
     const el = document.getElementById(id);
@@ -1548,7 +1665,7 @@ function comecarEscutas(user) {
 }
 
 // Meus dados mudaram: redesenha e confere conquistas e metas do casal
-function aposMudanca() { render(); migrarPlanoAntigo(); verificarConquistas(); verificarMetas(); }
+function aposMudanca() { render(); migrarPlanoAntigo(); migrarBoasVindas(); verificarConquistas(); verificarMetas(); }
 
 // Escuta os dados da pessoa que estou acompanhando. Refaz a escuta quando a pessoa
 // muda, aceita o pedido ou liga/desliga as permissões de treinos e check-ins.
@@ -1612,6 +1729,8 @@ function sincronizarMensagens() {
 function pararMensagens() { Object.values(pararMsgs).forEach(f => f()); pararMsgs = {}; S.mensagens = {}; }
 
 if (Store.configurado) {
+  // Voltando do login do Google pelo redirecionamento: mostra o erro, se houver
+  Store.resultadoGoogle().catch(err => { console.warn(err); setTimeout(() => mostrarErroLogin(mensagemErro(err)), 500); });
   Store.onAuthChange(user => {
     S.user = user;
     S.perfil = undefined; S.plano = {}; S.registros = {}; S.checkins = []; S.fotos = {}; S.pesos = []; S.medidas = []; S.dica = {}; S.carregado = {}; S.editandoMeta = null;
@@ -1730,6 +1849,8 @@ document.addEventListener('click', e => {
     usarModelo(MODELOS.find(m => m.id === b.dataset.usarModelo));
     return;
   }
+  if (b.dataset.bvModelo) { S.bv = { ...(S.bv || {}), passo: 2, modelo: b.dataset.bvModelo }; render(); return; }
+  if (b.dataset.tipoSugestao) { S.tipoSugestao = b.dataset.tipoSugestao; render(); return; }
   if (b.dataset.verConquistas !== undefined) { S.verTodasConquistas = !S.verTodasConquistas; render(); return; }
   if (b.dataset.exSel) { S.exSel = b.dataset.exSel; render(); return; }
   if (b.dataset.apagarFotoProg) {
@@ -1803,6 +1924,19 @@ document.addEventListener('click', e => {
   if (acao === 'enviar-checkin') { enviarCheckin(); return; }
   if (acao === 'ativar-avisos') { ativarAvisos(); return; }
   if (acao === 'ja-confirmei') { jaConfirmei(false); return; }
+  if (acao === 'bv-pular' || acao === 'bv-fim') { concluirBoasVindas(); return; }
+  if (acao === 'bv-2') {
+    const m = MODELOS.find(x => x.id === S.bv?.modelo);
+    S.bv = { ...S.bv, passo: 3 };
+    if (m) usarModelo(m); else render();
+    return;
+  }
+  if (acao === 'apagar-conta') { S.apagar = {}; render(); document.getElementById('apagarTexto')?.focus(); return; }
+  if (acao === 'cancelar-apagar') { S.apagar = null; render(); return; }
+  if (acao === 'google') {
+    Store.entrarComGoogle().catch(err => mostrarErroLogin(mensagemErro(err)));
+    return;
+  }
   if (acao === 'reenviar-verificacao') {
     Store.reenviarVerificacao().then(() => toast('E-mail reenviado. Olhe também no spam.'), err => toast(mensagemErro(err)));
     return;
@@ -1982,6 +2116,59 @@ document.addEventListener('submit', async e => {
     });
     S.editandoEx = null;
     await salvar(Store.salvarDia(uid(), S.diaSel, p), 'Exercício atualizado');
+    return;
+  }
+
+  if (f.id === 'formBv1') {
+    const nome = $('#bvNome').value.trim() || S.perfil?.nome || 'Você';
+    let altura = parseFloat($('#bvAltura').value.replace(',', '.'));
+    if (altura > 0 && altura < 3) altura *= 100;
+    altura = Number.isFinite(altura) ? Math.round(altura) : null;
+    const meta = parseFloat($('#bvMeta').value.replace(',', '.'));
+    if (altura !== null && (altura < 100 || altura > 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
+    if (Number.isFinite(meta) && (meta < 30 || meta > 250)) return toast('A meta precisa estar entre 30 e 250 kg.');
+    try {
+      await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), alturaCm: altura, metaPeso: Number.isFinite(meta) ? meta : null });
+    } catch (err) { return toast(mensagemErro(err)); }
+    S.bv = { passo: 2, modelo: S.bv?.modelo ?? 'abc' };
+    render();
+    return;
+  }
+
+  if (f.id === 'formSugestao') {
+    const texto = $('#sugestaoTexto').value.trim();
+    if (texto.length < 5) return toast('Escreva um pouco mais, por favor.');
+    const tipo = S.tipoSugestao === 'problema' ? 'problema' : 'ideia';
+    try {
+      await Store.enviarSugestao(uid(), S.perfil?.nome, S.user.email, tipo, texto);
+      $('#sugestaoTexto').value = '';
+      toast('Recebido! Obrigado por ajudar a melhorar o app 💚');
+      Store.avisar({ evento: 'sugestao', tipo });
+    } catch (err) { console.error(err); toast(mensagemErro(err)); }
+    return;
+  }
+
+  if (f.id === 'formApagar') {
+    const erroEl = $('#apagarErro');
+    const mostrar = t => { if (erroEl) { erroEl.textContent = t; erroEl.hidden = false; } };
+    if ($('#apagarTexto').value.trim().toUpperCase() !== 'APAGAR') return mostrar('Digite APAGAR para confirmar.');
+    const senha = $('#apagarSenha')?.value || '';
+    if (Store.provedorAtual() !== 'google.com' && !senha) return mostrar('Digite sua senha.');
+    try {
+      await Store.confirmarIdentidade(senha);
+    } catch (err) { return mostrar(mensagemErro(err)); }
+    const codigo = S.perfil?.codigo;
+    S.apagando = true; // evita recriar o perfil enquanto apaga
+    pararEscutas.forEach(fn => fn()); pararEscutas = []; pararDeAcompanhar(); pararMensagens(); pararDescanso();
+    try {
+      await Store.apagarTudo(uid(), codigo, texto => { S.apagar = { andamento: texto }; render(); });
+      try { localStorage.clear(); } catch { /* ok */ }
+      toast('Sua conta e seus dados foram apagados.');
+    } catch (err) {
+      console.error(err);
+      S.apagar = { andamento: 'Parou no meio: ' + mensagemErro(err) + ' Saia e entre de novo para tentar outra vez.' };
+      render();
+    } finally { S.apagando = false; }
     return;
   }
 

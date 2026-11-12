@@ -236,6 +236,25 @@ label.row { cursor: pointer; padding-block: 4px; }
 
 .code { font-family: var(--display); font-size: 30px; font-weight: 800; letter-spacing: .08em; }
 
+/* Login com Google, "ou", apagar conta */
+.ou { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; color: var(--muted); font-size: 13px; }
+.ou::before, .ou::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.google { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.centro { text-align: center; margin-top: 12px; }
+a.btn { display: block; text-align: center; text-decoration: none; }
+a.link { text-decoration: underline; }
+textarea.input { resize: vertical; min-height: 96px; font: inherit; }
+.perigo { color: var(--hot); }
+.perigo-card { border-color: var(--hot); }
+.btn.perigo-btn { background: var(--hot); }
+
+/* Primeiro acesso */
+.passos { display: flex; gap: 6px; }
+.passos i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.passos i.on { background: var(--accent); }
+.modelo-opcao { text-align: left; width: 100%; cursor: pointer; }
+.modelo-opcao.on { border-color: var(--accent); background: var(--accent-soft); }
+
 /* Subabas (logo abaixo do título) */
 .subnav { display: flex; gap: 4px; margin-top: 12px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; scrollbar-width: none; }
 .subnav::-webkit-scrollbar { display: none; }

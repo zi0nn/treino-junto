@@ -39,6 +39,7 @@ function doPost(e) {
     else if (dados.evento === 'recado') avisarRecado(uid, String(dados.conexaoId || ''), String(dados.texto || ''));
     else if (dados.evento === 'conquista') avisarConquista(uid, String(dados.id || ''), String(dados.nome || '').slice(0, 40));
     else if (dados.evento === 'metaBatida') avisarMetaBatida(uid, String(dados.conexaoId || ''));
+    else if (dados.evento === 'sugestao') avisarSugestao(uid, String(dados.tipo || ''));
     else return responder({ ok: false, erro: 'Evento desconhecido' });
 
     return responder({ ok: true });
@@ -126,6 +127,14 @@ function avisarMetaBatida(atleta, conexaoId) {
   notificar(c.viewer, '🎉 ' + nomeDe(atleta) + ' bateu a meta do mês!',
     c.meta.treinos + ' treinos' + (c.meta.recompensa ? '. Recompensa: ' + c.meta.recompensa : '') + '. Hora de cumprir! 😄',
     SITE_URL + '#mural', 'meta-' + conexaoId);
+}
+
+// Sugestão nova → avisa quem mantém o app (a conta dona do script, pelo e-mail dela)
+function avisarSugestao(uid, tipo) {
+  const dono = listar('users').filter(u => String(u.email).toLowerCase() === Session.getEffectiveUser().getEmail().toLowerCase())[0];
+  if (!dono) return;
+  notificar(dono.id, (tipo === 'problema' ? '🐞 Problema relatado por ' : '💡 Sugestão de ') + nomeDe(uid),
+    'Veja na aba Sugestões do backup ou no Firestore (coleção sugestoes).', SITE_URL, 'sugestao');
 }
 
 // Dias com treino (exercício marcado ou check-in) num mês 'AAAA-MM'
@@ -287,8 +296,19 @@ function fazerBackup() {
       c.perm && c.perm.treinos ? 'sim' : 'não', c.perm && c.perm.checkins ? 'sim' : 'não', c.perm && c.perm.peso ? 'sim' : 'não',
       c.meta ? c.meta.mes + ': ' + c.meta.treinos + ' treinos (' + (c.meta.recompensa || '') + ')' : '']));
   escreverAba(planilha.insertSheet('Recados'), ['Quando', 'De', 'Texto'], recados.sort());
+  escreverAba(planilha.insertSheet('Sugestões'), ['Quando', 'Pessoa', 'E-mail', 'Tipo', 'Texto', 'Versão'],
+    listar('sugestoes').sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0))
+      .map(s => [quando(s.criadoEm), s.nome || '', s.email || '', s.tipo || '', s.texto || '', s.versao || '']));
 
-  DriveApp.getFileById(planilha.getId()).moveTo(pastaDeBackup());
+  const pasta = pastaDeBackup();
+  DriveApp.getFileById(planilha.getId()).moveTo(pasta);
+  // Guarda só as últimas 4 semanas (combinado na página de privacidade): as mais antigas vão para a lixeira
+  const limite = Date.now() - 29 * 86400000;
+  const arquivos = pasta.getFiles();
+  while (arquivos.hasNext()) {
+    const f = arquivos.next();
+    if (f.getDateCreated().getTime() < limite) f.setTrashed(true);
+  }
   console.log('Backup criado: ' + planilha.getUrl());
   return planilha.getUrl();
 }

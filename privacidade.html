@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacidade · Treino Junto</title>
+  <meta name="description" content="Quais dados o Treino Junto guarda, quem vê cada coisa e como apagar tudo.">
+  <meta name="theme-color" content="#1E7A58">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .texto { max-width: 640px; margin: 0 auto; padding-block: calc(24px + env(safe-area-inset-top, 0px)) 48px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .texto h1 { font-size: 30px; margin-bottom: 4px; }
+    .texto h2 { margin-top: 28px; margin-bottom: 8px; }
+    .texto p, .texto li { line-height: 1.6; }
+    .texto ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+    .texto table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .texto th, .texto td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .tabela { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <main class="texto">
+    <a class="link" href="./">← Voltar para o app</a>
+    <h1>Privacidade</h1>
+    <p class="muted">Treino Junto · atualizado em 12 de novembro de 2026</p>
+
+    <h2>Em poucas palavras</h2>
+    <ul>
+      <li>Você só vê seus dados e os de quem <b>aceitou</b> se conectar com você.</li>
+      <li>Quem treina escolhe o que cada pessoa conectada pode ver: treinos, check-ins e peso. Dá para mudar a qualquer hora.</li>
+      <li><b>Medidas e fotos de antes e depois nunca aparecem para ninguém</b>, só para você.</li>
+      <li>Não vendemos nem compartilhamos seus dados com empresas, e o app não tem anúncios.</li>
+      <li>Você pode apagar tudo, na hora, em <b>Perfil › Dados › Apagar minha conta</b>.</li>
+    </ul>
+
+    <h2>O que o app guarda</h2>
+    <div class="tabela"><table>
+      <tr><th>Dado</th><th>Para quê</th></tr>
+      <tr><td>Nome e e-mail</td><td>Entrar na conta e mostrar seu nome para quem está conectado com você.</td></tr>
+      <tr><td>Altura, meta e peso</td><td>Gráfico de peso, IMC e faixa saudável.</td></tr>
+      <tr><td>Plano da semana, exercícios marcados e cargas</td><td>Treino do dia, histórico, sequência e conquistas.</td></tr>
+      <tr><td>Check-ins (foto, legenda e hora)</td><td>Mostrar para quem te acompanha que você foi à academia.</td></tr>
+      <tr><td>Medidas e fotos de antes e depois</td><td>Seu acompanhamento pessoal. Privados.</td></tr>
+      <tr><td>Recados e reações</td><td>Conversa entre as pessoas conectadas.</td></tr>
+      <tr><td>Código do aparelho para avisos</td><td>Mandar as notificações, se você ativar.</td></tr>
+      <tr><td>Sugestões que você envia</td><td>Melhorar o app.</td></tr>
+    </table></div>
+    <p>As fotos são reduzidas no próprio celular antes de serem enviadas. O app não usa a sua localização.</p>
+
+    <h2>Quem vê o quê</h2>
+    <ul>
+      <li><b>Você:</b> tudo o que é seu.</li>
+      <li><b>Quem te acompanha</b> (depois que você aceita o pedido): só o que você liberar em Perfil › Conexões. Treinos e faltas, check-ins e fotos, e peso com IMC, cada um com sua chave. Quem acompanha nunca vê "quanto falta perder", medidas ou fotos de antes e depois.</li>
+      <li><b>Quem você acompanha:</b> vê seu nome e os recados e reações que você manda.</li>
+      <li><b>Quem mantém o app:</b> tem acesso técnico ao banco de dados para manter o serviço funcionando e recebe uma cópia de segurança semanal (veja abaixo). Não olha seus dados sem motivo e nunca os usa para outra coisa.</li>
+    </ul>
+
+    <h2>Onde ficam os dados</h2>
+    <ul>
+      <li>No <b>Firebase</b> (Google Cloud), no servidor de São Paulo, protegidos por regras que só deixam cada pessoa acessar o que pode.</li>
+      <li>As notificações passam pelo serviço de mensagens do Google (Firebase Cloud Messaging).</li>
+      <li>Toda segunda-feira é feita uma <b>cópia de segurança</b> em planilha (sem as fotos) no Google Drive de quem mantém o app. Só as cópias das <b>últimas 4 semanas</b> são guardadas; as mais antigas são apagadas sozinhas.</li>
+    </ul>
+
+    <h2>Apagar seus dados</h2>
+    <p>Em <b>Perfil › Dados › Apagar minha conta</b>, o app apaga na hora seu perfil, treinos, check-ins, fotos, peso, medidas, conexões, recados e o seu login. Isso não tem volta.</p>
+    <p>Seus dados ainda podem aparecer nas cópias de segurança por até 4 semanas, até elas serem apagadas automaticamente.</p>
+
+    <h2>Seus direitos (LGPD)</h2>
+    <p>Pela Lei Geral de Proteção de Dados, você pode pedir para ver, corrigir ou apagar seus dados e saber com quem eles são compartilhados. Quase tudo dá para fazer sozinho no app (Perfil e Conexões). Para qualquer outro pedido ou dúvida, use <b>Perfil › Dados › Mandar sugestão</b>.</p>
+
+    <h2>Mudanças</h2>
+    <p>Se esta página mudar de forma importante, o app avisa.</p>
+  </main>
+</body>
+</html>

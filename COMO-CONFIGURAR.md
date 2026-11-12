@@ -123,6 +123,32 @@ O script confere de hora em hora quem escolheu aquele horário no app (Perfil > 
 
 ---
 
+## 8. Abrir o app para outras pessoas
+
+### 8.1 Entrar com Google
+1. No Firebase: **Authentication > Método de login > Adicionar novo provedor > Google**. Ative, escolha o **e-mail de suporte** (o seu pessoal) e salve.
+2. Ainda em Authentication, aba **Configurações > Domínios autorizados > Adicionar domínio**: `zi0nn.github.io`.
+
+### 8.2 Proteção contra abuso (App Check)
+Garante que só o seu site use o seu Firebase (ninguém consegue gastar a sua cota grátis com um robô).
+1. Abra <https://www.google.com/recaptcha/admin/create> com a conta pessoal.
+2. **Rótulo:** `treino-junto`. **Tipo:** reCAPTCHA **v3** (pontuação). **Domínios:** `zi0nn.github.io` e `localhost`. Envie.
+3. Copie a **chave do site** (a primeira) e cole no chat do Claude: ela vai no `firebase-config.js` como `RECAPTCHA_KEY`.
+4. Copie também a **chave secreta** (a segunda).
+5. No Firebase: **Criação > App Check > Apps > o app Web > reCAPTCHA v3**, cole a chave **secreta** e salve.
+6. **Não clique em "Aplicar" (enforce) ainda.** Use o app uns dias e veja na tela do App Check se quase todas as solicitações aparecem como **verificadas**. Aí sim, em **APIs > Cloud Firestore > Aplicar**.
+
+> Para testar no computador (`localhost`): o app escreve no console do navegador um "App Check debug token". Cadastre esse código em **App Check > Apps > ⋮ > Gerenciar tokens de depuração**.
+
+### 8.3 O que já vem pronto no app
+- **Confirmação de e-mail** no cadastro (quem entra com Google já vem confirmado).
+- **Primeiro acesso guiado:** nome, altura, meta, modelo de treino e código de conexão.
+- **Página de privacidade** (`privacidade.html`), com link no login e em Perfil › Dados.
+- **Apagar minha conta** em Perfil › Dados: apaga tudo na hora (exige digitar APAGAR e a senha).
+- **Mandar sugestão** em Perfil › Dados. As sugestões chegam como aviso para a conta dona do script e ficam na aba **Sugestões** do backup e no Firestore (coleção `sugestoes`).
+
+---
+
 ## Etapas do projeto
 
 | Etapa | O que entra | Situação |
@@ -135,6 +161,10 @@ O script confere de hora em hora quem escolheu aquele horário no app (Perfil > 
 | 6 | IMC, medidas do corpo, horário do lembrete | ✅ pronta |
 | 7 | Sequência e conquistas, metas do casal, resumo de domingo | ✅ pronta |
 | 8 | Evolução de carga, fotos de antes e depois, backup semanal | ✅ pronta |
+| A | Menu em 5 abas, editar exercício, cronômetro de descanso, modelos, histórico, confirmação de e-mail | ✅ pronta |
+| B | Primeiro acesso, login com Google, apagar conta, privacidade, App Check, sugestões | em teste |
+| C | Sequência do casal, cartão para compartilhar, calendário do ano | |
+| D | Testes automáticos das regras, organizar o código | |
 
 ### Backup semanal
 Toda segunda às 7h o script cria uma planilha com todos os dados na pasta **Treino Junto - Backups** do seu Google Drive (as fotos não vão, ficam no Firebase). Para fazer um backup na hora: no script, rode **fazerBackup**.

@@ -19,6 +19,8 @@
      codigos/{codigo}             → { uid }   código de conexão
      dispositivos/{token}         → { uid, atualizadoEm }   aparelhos que recebem avisos
      users/{uid}.avisos           → { checkin, lembrete, meuLembrete, recados, reacoes } (false = desligado)
+     sugestoes/{id}               → { uid, nome, email, tipo, texto, versao, criadoEm }   só quem mantém o app lê
+     users/{uid}.boasVindas       → 'AAAA-MM-DD' em que terminou o primeiro acesso guiado
      conexoes/{atleta}_{viewer}   → { atleta, viewer, codigo, atletaNome, viewerNome, status, perm, criadoEm }
                                     atleta = quem treina; viewer = quem acompanha
                                     status = 'pendente' | 'aceita'
@@ -29,7 +31,10 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  EmailAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup, deleteUser,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js';
 import {
   getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, query, where, documentId, onSnapshot, getDoc, getDocs, orderBy, limit,
@@ -37,13 +42,22 @@ import {
   runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { getMessaging, getToken, deleteToken, isSupported } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
-import { firebaseConfig, VAPID_KEY, AVISOS_URL } from './firebase-config.js';
+import { firebaseConfig, VAPID_KEY, AVISOS_URL, RECAPTCHA_KEY, VERSAO } from './firebase-config.js';
 
 const preenchido = v => !!v && !v.startsWith('COLE');
 export const configurado = preenchido(firebaseConfig.apiKey);
 export const avisosConfigurados = preenchido(VAPID_KEY) && preenchido(AVISOS_URL);
 
 const app = configurado ? initializeApp(firebaseConfig) : null;
+
+// Proteção contra abuso (App Check): prova para o Firebase que o pedido veio do site de verdade.
+// No computador de teste (localhost) usa um código de depuração, cadastrado no Console do Firebase.
+if (app && preenchido(RECAPTCHA_KEY)) {
+  if (location.hostname === 'localhost') self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  try {
+    initializeAppCheck(app, { provider: new ReCaptchaV3Provider(RECAPTCHA_KEY), isTokenAutoRefreshEnabled: true });
+  } catch (err) { console.warn('App Check não iniciou', err); }
+}
 const auth = app && getAuth(app);
 const db = app && abrirBanco(app);
 if (auth) auth.languageCode = 'pt-BR';
@@ -68,6 +82,27 @@ export function onAuthChange(callback) {
   return onAuthStateChanged(auth, user => callback(user
     ? { uid: user.uid, email: user.email, nome: user.displayName, verificado: user.emailVerified } : null));
 }
+
+// ---------- Entrar com Google ----------
+// No celular com o app instalado, a janelinha (popup) às vezes é bloqueada: aí vai pelo redirecionamento.
+export async function entrarComGoogle() {
+  const provedor = new GoogleAuthProvider();
+  provedor.setCustomParameters({ prompt: 'select_account' });
+  try {
+    await signInWithPopup(auth, provedor);
+  } catch (err) {
+    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(err.code)) {
+      await signInWithRedirect(auth, provedor);
+      return;
+    }
+    throw err;
+  }
+}
+// Volta do redirecionamento do Google: só para mostrar erro, se houver (o login em si chega pelo onAuthChange)
+export const resultadoGoogle = () => (auth ? getRedirectResult(auth) : Promise.resolve(null));
+
+// Como a pessoa entra: 'password' (e-mail e senha) ou 'google.com'
+export const provedorAtual = () => auth.currentUser?.providerData?.[0]?.providerId || 'password';
 
 // ---------- Confirmação do e-mail ----------
 // A conta só funciona depois que a pessoa toca no link que chega no e-mail.
@@ -303,6 +338,56 @@ export const salvarMetaCasal = (conexaoId, meta) => updateDoc(doc(db, 'conexoes'
 // (o perfil em si é privado). Só a altura: o resto do perfil continua só meu.
 export async function copiarAlturaParaConexoes(ids, alturaCm) {
   await Promise.all(ids.map(id => updateDoc(doc(db, 'conexoes', id), { alturaCm })));
+}
+
+// ---------- Sugestões ----------
+export const enviarSugestao = (uid, nome, email, tipo, texto) =>
+  addDoc(collection(db, 'sugestoes'), {
+    uid, nome: String(nome || '').slice(0, 40), email: String(email || '').slice(0, 100),
+    tipo, texto: String(texto).slice(0, 1000), versao: VERSAO, criadoEm: serverTimestamp(),
+  });
+
+// ---------- Apagar minha conta e meus dados (LGPD) ----------
+
+// O Firebase só deixa apagar a conta com login recente: confirma a senha (ou o Google) de novo
+export async function confirmarIdentidade(senha) {
+  const u = auth.currentUser;
+  if (provedorAtual() === 'google.com') return reauthenticateWithPopup(u, new GoogleAuthProvider());
+  return reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, senha));
+}
+
+async function apagarColecao(caminho) {
+  const snap = await getDocs(collection(db, ...caminho));
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+}
+
+// Apaga tudo da pessoa e, por último, o login. progresso(texto) mostra em que passo está.
+export async function apagarTudo(uid, codigo, progresso = () => {}) {
+  progresso('Apagando conexões e recados…');
+  const conexoes = [
+    ...(await getDocs(query(collection(db, 'conexoes'), where('atleta', '==', uid)))).docs,
+    ...(await getDocs(query(collection(db, 'conexoes'), where('viewer', '==', uid)))).docs,
+  ];
+  for (const c of conexoes) {
+    if (c.data().status === 'aceita') await apagarColecao(['conexoes', c.id, 'mensagens']);
+    await deleteDoc(c.ref);
+  }
+  progresso('Apagando treinos, check-ins e fotos…');
+  for (const sub of ['plano', 'registros', 'checkins', 'fotos', 'pesos', 'medidas', 'fotosProgresso']) {
+    await apagarColecao(['users', uid, sub]);
+  }
+  progresso('Desligando os avisos…');
+  const aparelhos = await getDocs(query(collection(db, 'dispositivos'), where('uid', '==', uid)));
+  await Promise.all(aparelhos.docs.map(d => deleteDoc(d.ref)));
+  progresso('Apagando o perfil…');
+  if (codigo) await deleteDoc(doc(db, 'codigos', codigo)).catch(() => {});
+  await deleteDoc(doc(db, 'users', uid));
+  progresso('Apagando o login…');
+  await deleteUser(auth.currentUser);
 }
 
 // ---------- Avisos no celular ----------
