@@ -77,6 +77,45 @@ Tudo aqui é gratuito e não pede cartão. Use **as suas contas pessoais**, não
 
 ---
 
+## 7. Avisos no celular (etapa 4)
+
+Os avisos saem de um **Google Apps Script** na sua conta Google pessoal, a mesma do Firebase. Grátis e sem cartão.
+
+### 7.1 Chave pública de notificações
+1. No Firebase: **⚙ Configurações > Geral**, depois a aba **Cloud Messaging**.
+2. Role até **Configuração da Web > Certificados push da Web** e clique em **Gerar par de chaves**.
+3. Copie a chave que aparece (começa com `B…`) e cole no chat do Claude. Ela vai no `firebase-config.js` como `VAPID_KEY`.
+
+### 7.2 Criar o script
+1. Abra <https://script.google.com> **com o Gmail pessoal** e clique em **Novo projeto**.
+2. Clique em **Projeto sem título** no alto e dê o nome `Treino Junto - Avisos`.
+3. Apague o que estiver no editor e cole todo o conteúdo do arquivo `avisos-script.gs`.
+4. No menu da esquerda, clique na engrenagem **Configurações do projeto** e marque **Mostrar arquivo de manifesto "appsscript.json" no editor**.
+5. Volte ao editor (ícone `< >`), abra o `appsscript.json`, apague tudo e cole o conteúdo do arquivo `avisos-script-manifest.json`.
+6. Clique em **Salvar** (ícone de disquete).
+
+### 7.3 Ligar o lembrete das 19h
+1. No alto do editor, na lista de funções, escolha **instalarRotinas** e clique em **Executar**.
+2. Vai pedir autorização: **Revisar permissões**, escolha sua conta pessoal. Se aparecer "O Google não verificou este app", clique em **Avançado > Acessar Treino Junto - Avisos (não seguro)**. O app é seu. Depois clique em **Permitir**.
+3. Embaixo deve aparecer: `Pronto: lembrete diário ligado para as 19h.`
+
+### 7.4 Publicar como App da Web
+1. Clique em **Implantar > Nova implantação**.
+2. Na engrenagem ao lado de "Selecione o tipo", escolha **App da Web**.
+3. **Executar como:** Eu. **Quem pode acessar:** Qualquer pessoa.
+4. Clique em **Implantar** e copie o **URL do app da Web** (termina em `/exec`). Cole no chat do Claude. Ele vai no `firebase-config.js` como `AVISOS_URL`.
+
+> Mesmo com o endereço público, ninguém consegue usar o script para incomodar: ele confere no Firebase quem está pedindo e só avisa quem está conectado com essa pessoa.
+
+> Se mudar o código do script depois: **Implantar > Gerenciar implantações > lápis > Versão: Nova versão > Implantar**. O endereço continua o mesmo.
+
+### 7.5 Ativar no celular
+1. **iPhone:** o app precisa estar na **Tela de Início** (Safari > Compartilhar > Adicionar à Tela de Início) e ser aberto por lá.
+2. No app, toque em **Ativar avisos** (aparece na tela Hoje e no Perfil) e permita as notificações.
+3. Para testar: no script, troque `COLE_UM_EMAIL_AQUI` na função **testarAviso** pelo e-mail da conta, escolha **testarAviso** e clique em **Executar**.
+
+---
+
 ## Etapas do projeto
 
 | Etapa | O que entra | Situação |
@@ -84,7 +123,7 @@ Tudo aqui é gratuito e não pede cartão. Use **as suas contas pessoais**, não
 | 1 | Login, perfil, plano da semana, checklist do dia | ✅ pronta |
 | 2 | Código de conexão, quem acompanha, permissões | ✅ pronta |
 | 3 | Check-in com foto, reações e recados | ✅ pronta |
-| 4 | Notificações (Apps Script + Firebase Cloud Messaging) | |
+| 4 | Notificações (Apps Script + Firebase Cloud Messaging) | em teste |
 | 5 | Peso, gráfico e frequência | |
 
 O protótipo de referência está em `prototipo/treino-junto.html`.

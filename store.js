@@ -13,6 +13,8 @@
                                     para a lista de check-ins carregar rápido e a foto só quando aparece.
      conexoes/{id}/mensagens/{id} → { de, texto, criadoEm }   recados entre as duas pessoas conectadas
      codigos/{codigo}             → { uid }   código de conexão
+     dispositivos/{token}         → { uid, atualizadoEm }   aparelhos que recebem avisos
+     users/{uid}.avisos           → { checkin, lembrete, meuLembrete, recados, reacoes } (false = desligado)
      conexoes/{atleta}_{viewer}   → { atleta, viewer, codigo, atletaNome, viewerNome, status, perm, criadoEm }
                                     atleta = quem treina; viewer = quem acompanha
                                     status = 'pendente' | 'aceita'
@@ -30,9 +32,12 @@ import {
   setDoc, updateDoc, deleteDoc, addDoc, writeBatch, deleteField,
   runTransaction, serverTimestamp, arrayUnion, arrayRemove,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js';
+import { getMessaging, getToken, deleteToken, isSupported } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
+import { firebaseConfig, VAPID_KEY, AVISOS_URL } from './firebase-config.js';
 
-export const configurado = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('COLE');
+const preenchido = v => !!v && !v.startsWith('COLE');
+export const configurado = preenchido(firebaseConfig.apiKey);
+export const avisosConfigurados = preenchido(VAPID_KEY) && preenchido(AVISOS_URL);
 
 const app = configurado ? initializeApp(firebaseConfig) : null;
 const auth = app && getAuth(app);
@@ -60,7 +65,7 @@ export function onAuthChange(callback) {
 }
 
 export const entrar = (email, senha) => signInWithEmailAndPassword(auth, normalizarEmail(email), senha);
-export const sair = () => signOut(auth);
+export const sair = async () => { await esquecerAparelho(); await signOut(auth); };
 export const esqueciSenha = email => sendPasswordResetEmail(auth, normalizarEmail(email));
 
 export async function criarConta(nome, email, senha) {
@@ -222,6 +227,54 @@ export function escutarMensagens(conexaoId, callback, onError) {
 
 export const enviarMensagem = (conexaoId, meuUid, texto) =>
   addDoc(collection(db, 'conexoes', conexaoId, 'mensagens'), { de: meuUid, texto: String(texto).slice(0, 300), criadoEm: serverTimestamp() });
+
+// ---------- Avisos no celular ----------
+// O app registra o aparelho no Firestore e, quando algo acontece (check-in, reação, recado),
+// pede ao script de avisos (Google Apps Script) para notificar. O script confere quem pediu
+// e decide sozinho quem recebe, lendo as conexões no banco.
+
+export const suportaNotificacoes = () => isSupported().catch(() => false);
+
+async function tokenDoAparelho() {
+  if (!avisosConfigurados || !(await suportaNotificacoes())) return null;
+  const registro = await navigator.serviceWorker.ready;
+  return getToken(getMessaging(app), { vapidKey: VAPID_KEY, serviceWorkerRegistration: registro });
+}
+
+// Chamar depois que a pessoa permitiu as notificações (e a cada login, para manter atualizado)
+export async function registrarAparelho(uid) {
+  const token = await tokenDoAparelho();
+  if (!token) return false;
+  await setDoc(doc(db, 'dispositivos', token), { uid, atualizadoEm: serverTimestamp() });
+  return true;
+}
+
+// Ao sair da conta, este aparelho para de receber os avisos dela
+export async function esquecerAparelho() {
+  if (globalThis.Notification?.permission !== 'granted') return;
+  try {
+    const token = await tokenDoAparelho();
+    if (token) await deleteDoc(doc(db, 'dispositivos', token));
+    await deleteToken(getMessaging(app));
+  } catch (err) { console.warn('Não deu para desligar os avisos deste aparelho', err); }
+}
+
+export const salvarAvisos = (uid, avisos) => updateDoc(doc(db, 'users', uid), { avisos });
+
+// Pede ao script para avisar sobre um acontecimento. Nunca trava o app se falhar.
+export async function avisar(evento) {
+  if (!preenchido(AVISOS_URL) || !auth.currentUser) return;
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resposta = await fetch(AVISOS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita o bloqueio de CORS do Google
+      body: JSON.stringify({ idToken, ...evento }),
+    });
+    const r = await resposta.json();
+    if (!r.ok) console.warn('Aviso não enviado:', r.erro);
+  } catch (err) { console.warn('Aviso não enviado', err); }
+}
 
 export const marcarExercicio = (uid, data, exId, feito) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {

@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Regras de segurança do Treino Junto (etapa 3).
+// Regras de segurança do Treino Junto (etapa 4).
 // Copie tudo e cole no Console do Firebase > Firestore Database > Regras > Publicar.
 //
 // Resumo: cada pessoa só altera os próprios dados.
@@ -22,9 +22,11 @@ service cloud.firestore {
 
     function perfilValido() {
       let d = request.resource.data;
-      return d.keys().hasOnly(['nome', 'email', 'codigo', 'metaPeso', 'criadoEm'])
+      return d.keys().hasOnly(['nome', 'email', 'codigo', 'metaPeso', 'criadoEm', 'avisos'])
         && d.nome is string && d.nome.size() > 0 && d.nome.size() <= 40
         && d.codigo is string
+        && (!('avisos' in d) || (d.avisos is map
+            && d.avisos.keys().hasOnly(['checkin', 'lembrete', 'meuLembrete', 'recados', 'reacoes'])))
         && (d.metaPeso == null || (d.metaPeso is number && d.metaPeso > 0 && d.metaPeso < 300));
     }
 
@@ -90,6 +92,15 @@ service cloud.firestore {
       allow create: if logado() && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
         && codigo.matches('^FIT-[A-Z0-9]{4}$');
+    }
+
+    // Aparelhos que recebem avisos: o id é o código do aparelho no Firebase Cloud Messaging.
+    // Cada pessoa só cadastra aparelho para si mesma (se outra conta entrar no mesmo celular, ele passa para ela).
+    match /dispositivos/{token} {
+      allow read, delete: if logado() && resource.data.uid == request.auth.uid;
+      allow create, update: if logado()
+        && request.resource.data.keys().hasOnly(['uid', 'atualizadoEm'])
+        && request.resource.data.uid == request.auth.uid;
     }
 
     // Conexões: o id é sempre "{quem treina}_{quem acompanha}"

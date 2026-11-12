@@ -288,6 +288,7 @@ function telaHoje() {
     <h3>${pedidos.length === 1 ? `${esc(nomeDe(pedidos[0], 'viewer'))} quer te acompanhar` : `${pedidos.length} pessoas querem te acompanhar`}</h3>
     <button class="btn sm" data-aba="perfil">Ver pedido</button></div></section>` : ''}
   ${secaoCheckinHoje()}
+  ${convitAvisos()}
   ${meusAcompanhantes().map(c => secaoRecados(c, nomeDe(c, 'viewer'), 3, ['Valeu! ❤️', 'Tô indo!', 'Hoje não deu 😕'])).join('')}
   <section class="block">
     <div class="grid3">
@@ -373,12 +374,71 @@ function telaPerfil() {
       <button class="btn sm ghost" data-remover-con="${c.id}">${S.confirmar === c.id ? 'Tocar de novo para remover' : 'Remover'}</button>
     </div>`).join('') : '<p class="small muted">Ninguém ainda. Passe o código abaixo para quem vai te incentivar.</p>'}
   </section>
+  ${secaoAvisos()}
   <section class="block"><span class="label">Seu código de conexão</span>
     <div class="card stack"><div class="code">${esc(p.codigo || '—')}</div>
       <p class="small muted">A pessoa digita esse código na aba Acompanhar. Você recebe o pedido aqui e decide se aceita.</p>
       <button class="btn sm ghost" data-acao="copiar">Copiar código</button></div>
   </section>
   <section class="block"><button class="btn ghost" data-acao="sair">Sair da conta</button></section>`;
+}
+
+// ---------- Avisos no celular ----------
+const ehIphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const instalado = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const permissao = () => globalThis.Notification?.permission; // 'default' | 'granted' | 'denied' | undefined
+
+const TIPOS_AVISO = [
+  ['checkin', 'Quando quem eu acompanho fizer check-in'],
+  ['lembrete', 'Às 19h, se quem eu acompanho ainda não treinou'],
+  ['meuLembrete', 'Às 19h, se eu ainda não treinei no dia de treino'],
+  ['recados', 'Recados novos'],
+  ['reacoes', 'Reações aos meus check-ins'],
+];
+
+// Situação dos avisos neste aparelho, em texto para a pessoa
+function estadoAvisos() {
+  if (!Store.avisosConfigurados) return { pode: false, texto: 'Os avisos ainda não foram configurados no app.' };
+  if (ehIphone && !instalado()) return { pode: false, texto: 'No iPhone, os avisos só funcionam com o app na Tela de Início: no Safari, toque em Compartilhar ⬆ e em "Adicionar à Tela de Início". Depois abra por lá.' };
+  if (!globalThis.Notification) return { pode: false, texto: 'Este navegador não recebe avisos. No Android, use o Chrome.' };
+  if (permissao() === 'denied') return { pode: false, texto: 'Os avisos estão bloqueados para este app. Libere nas configurações de notificação do celular e abra o app de novo.' };
+  if (permissao() === 'granted') return { pode: true, ativo: true, texto: 'Avisos ligados neste aparelho.' };
+  return { pode: true, ativo: false, texto: 'Receba um aviso quando alguém fizer check-in, reagir ou mandar recado.' };
+}
+
+function secaoAvisos() {
+  const e = estadoAvisos();
+  const prefs = S.perfil?.avisos || {};
+  return `<section class="block"><span class="label">Avisos no celular</span>
+    <div class="card stack">
+      <div class="row between"><p class="small grow ${e.ativo ? '' : 'muted'}">${esc(e.texto)}</p>${e.ativo ? '<span class="pill ok">Ligados</span>' : ''}</div>
+      ${e.pode && !e.ativo ? '<button class="btn" data-acao="ativar-avisos">Ativar avisos neste aparelho</button>' : ''}
+      ${TIPOS_AVISO.map(([k, t]) => `<label class="row between" for="aviso-${k}"><span>${t}</span>
+        <span class="switch"><input type="checkbox" id="aviso-${k}" data-aviso="${k}" ${prefs[k] === false ? '' : 'checked'}><span></span></span></label>`).join('')}
+    </div></section>`;
+}
+
+function convitAvisos() {
+  const e = estadoAvisos();
+  let dispensado = false;
+  try { dispensado = localStorage.getItem('avisos-dispensado') === '1'; } catch { /* sem armazenamento */ }
+  if (!e.pode || e.ativo || dispensado) return '';
+  return `<section class="block"><div class="card stack aviso"><h3>Ative os avisos</h3>
+    <p class="small">Saiba na hora quando alguém reagir ou mandar recado, e receba o lembrete do treino.</p>
+    <div class="row"><button class="btn ghost" data-acao="dispensar-avisos">Agora não</button><button class="btn" data-acao="ativar-avisos">Ativar</button></div></div></section>`;
+}
+
+async function ativarAvisos() {
+  try {
+    const resultado = await Notification.requestPermission();
+    if (resultado !== 'granted') { toast('Sem permissão, o app não consegue mandar avisos.'); render(); return; }
+    const ok = await Store.registrarAparelho(uid());
+    toast(ok ? 'Avisos ligados neste aparelho 🔔' : 'Este aparelho não suporta avisos.');
+  } catch (err) {
+    console.error(err);
+    toast('Não deu para ligar os avisos: ' + (err.message || err));
+  }
+  render();
 }
 
 function formConectar() {
@@ -587,7 +647,9 @@ if (Store.configurado) {
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     pararDeAcompanhar(); pararMensagens();
     if (user) comecarEscutas(user); else { pararEscutas.forEach(f => f()); pararEscutas = []; }
-    S.aba = 'hoje';
+    // Mantém o registro do aparelho atualizado (o código do aparelho pode mudar com o tempo)
+    if (user && Store.avisosConfigurados && permissao() === 'granted') Store.registrarAparelho(user.uid).catch(console.warn);
+    S.aba = abaDoEndereco(location.hash) || 'hoje';
     app.innerHTML = '';
     render();
   });
@@ -638,10 +700,12 @@ document.addEventListener('click', e => {
     const ck = S.acomp?.checkins.find(c => c.id === b.dataset.reagir);
     if (!atual || !ck) return;
     const emoji = ck.reacoes?.[uid()] === b.dataset.emoji ? null : b.dataset.emoji;
-    salvar(Store.reagir(atual.atleta, ck.id, uid(), emoji));
+    Store.reagir(atual.atleta, ck.id, uid(), emoji).then(() => {
+      if (emoji) Store.avisar({ evento: 'reacao', atleta: atual.atleta, checkinId: ck.id });
+    }, err => toast(mensagemErro(err)));
     return;
   }
-  if (b.dataset.rapido) { salvar(Store.enviarMensagem(b.dataset.con, uid(), b.dataset.rapido), 'Recado enviado'); return; }
+  if (b.dataset.rapido) { enviarRecado(b.dataset.con, b.dataset.rapido); return; }
 
   if (b.dataset.marcar) {
     const id = b.dataset.marcar, data = isoDe(hoje());
@@ -669,6 +733,8 @@ document.addEventListener('click', e => {
   if (acao === 'abrir-checkin') { S.checkin = { aberto: true, foto: null, processando: false, enviando: false }; render(); return; }
   if (acao === 'cancelar-checkin') { S.checkin.aberto = false; S.checkin.foto = null; render(); return; }
   if (acao === 'enviar-checkin') { enviarCheckin(); return; }
+  if (acao === 'ativar-avisos') { ativarAvisos(); return; }
+  if (acao === 'dispensar-avisos') { try { localStorage.setItem('avisos-dispensado', '1'); } catch { /* ok */ } render(); return; }
   if (acao === 'sair') salvar(Store.sair());
   if (acao === 'copiar') {
     const c = S.perfil?.codigo;
@@ -682,6 +748,14 @@ document.addEventListener('click', e => {
   }
 });
 
+async function enviarRecado(conexaoId, texto, mostrarToast = true) {
+  try {
+    await Store.enviarMensagem(conexaoId, uid(), texto);
+    if (mostrarToast) toast('Recado enviado');
+    Store.avisar({ evento: 'recado', conexaoId, texto });
+  } catch (err) { console.error(err); toast(mensagemErro(err)); }
+}
+
 async function enviarCheckin() {
   const ck = S.checkin;
   if (ck.enviando || ck.processando) return;
@@ -692,6 +766,7 @@ async function enviarCheckin() {
       data: isoDe(agora), hora: `${pad(agora.getHours())}:${pad(agora.getMinutes())}`, legenda: $('#legendaIn')?.value.trim() || '',
     }, ck.foto);
     if (ck.foto) S.fotos[`${uid()}/${id}`] = ck.foto; // já mostra a foto sem baixar de novo
+    Store.avisar({ evento: 'checkin', checkinId: id });
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     render();
     toast('Check-in feito! Quem te acompanha vai ver 💪');
@@ -710,6 +785,11 @@ document.addEventListener('change', e => {
     S.checkin.processando = true; S.checkin.foto = null; render();
     prepararFoto(t.files[0]).then(foto => { S.checkin.foto = foto; }, err => toast(err.message))
       .finally(() => { S.checkin.processando = false; render(); });
+    return;
+  }
+  if (t.dataset.aviso) {
+    const avisos = { ...(S.perfil?.avisos || {}), [t.dataset.aviso]: t.checked };
+    salvar(Store.salvarAvisos(uid(), avisos), t.checked ? 'Aviso ligado' : 'Aviso desligado');
     return;
   }
   if (t.dataset.perm) {
@@ -775,7 +855,7 @@ document.addEventListener('submit', async e => {
     const texto = input?.value.trim();
     if (!texto) return;
     input.value = '';
-    await salvar(Store.enviarMensagem(f.dataset.recado, uid(), texto));
+    await enviarRecado(f.dataset.recado, texto, false);
     return;
   }
 
@@ -799,6 +879,16 @@ document.addEventListener('submit', async e => {
     if (!nome) return toast('Digite seu nome.');
     salvar(Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), metaPeso: Number.isFinite(meta) ? meta : null }), 'Dados salvos');
   }
+});
+
+// ---------- Abrir na aba certa (ex.: tocar no aviso "fez check-in" abre o Acompanhar) ----------
+function abaDoEndereco(endereco) {
+  const aba = String(endereco || '').split('#')[1];
+  return ABAS.some(([k]) => k === aba) ? aba : null;
+}
+navigator.serviceWorker?.addEventListener('message', e => {
+  const aba = abaDoEndereco(e.data?.abrir);
+  if (aba && S.user) irPara(aba);
 });
 
 // ---------- App instalável e offline ----------

@@ -14,3 +14,11 @@ export const firebaseConfig = {
   messagingSenderId: '825594056841',
   appId: '1:825594056841:web:4ad910c27127e51ea6f658',
 };
+
+// Avisos no celular (etapa 4). Enquanto estiver "COLE_AQUI", o app funciona normalmente, só não manda avisos.
+// Chave PÚBLICA para notificações (pode ficar à mostra, não é segredo):
+// Console do Firebase > Configurações do projeto > Cloud Messaging > Certificados push da Web
+export const VAPID_KEY = 'BPlLJMcHX9fFPJMaiVrBxHKkdbSUYywWCm-zPOgtEOlo6OmmEGctyKyTn1TBtU-2iauZCmeA7rR9VRRVjM_XDzE';
+
+// Endereço do script de avisos (Google Apps Script publicado como App da Web, termina em /exec)
+export const AVISOS_URL = 'https://script.google.com/macros/s/AKfycby219j_ekFMpjmuSVVngmd3TbuyypOj4-viJFEBEckiYTnc02wNPbcyZXjqTrjwIZeSWw/exec';
