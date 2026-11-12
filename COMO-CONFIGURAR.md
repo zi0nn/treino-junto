@@ -163,7 +163,7 @@ Garante que só o seu site use o seu Firebase (ninguém consegue gastar a sua co
 | 8 | Evolução de carga, fotos de antes e depois, backup semanal | ✅ pronta |
 | A | Menu em 5 abas, editar exercício, cronômetro de descanso, modelos, histórico, confirmação de e-mail | ✅ pronta |
 | B | Primeiro acesso, login com Google, apagar conta, privacidade, sugestões (App Check pausado) | ✅ pronta |
-| C | Sequência do casal, cartão para compartilhar, calendário do ano (e o chat de recados saiu) | ✅ pronta |
+| C | Sequência do casal e calendário do ano (o chat de recados e o cartão de compartilhar saíram) | ✅ pronta |
 | D | Testes automáticos das regras, organizar o código | |
 
 ### Backup semanal

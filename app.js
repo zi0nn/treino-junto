@@ -1019,90 +1019,21 @@ function gradeConquistas(ctx, guardadas, mostrarBloqueadas) {
   // Por padrão mostra só as próximas 3 a conquistar, para não encher a tela de selos apagados
   const bloqueadas = S.verTodasConquistas ? todasBloqueadas : todasBloqueadas.slice(0, 3);
   if (!lista.length && !bloqueadas.length) return '<p class="small muted">Nenhuma conquista ainda.</p>';
-  // As minhas (guardadas) dá para compartilhar; as de quem eu acompanho, não
   return `<div class="selos">${lista.map(q => `<div class="selo"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b>
       <span class="small muted">${guardadas?.[q.id] ? dataCurta(guardadas[q.id]) : esc(q.desc)}</span>
-      ${guardadas ? `<button class="link compartilhar" data-compartilhar="${q.id}" aria-label="Compartilhar ${esc(q.nome)}">Compartilhar</button>` : ''}</div>`).join('')}
+      </div>`).join('')}
     ${bloqueadas.map(q => `<div class="selo bloqueado"><span class="selo-icone">${q.icone}</span><b>${esc(q.nome)}</b><span class="small muted">${esc(q.desc)}</span></div>`).join('')}</div>
     ${todasBloqueadas.length > 3 ? `<button class="link" data-ver-conquistas>${S.verTodasConquistas ? 'Mostrar menos' : `Ver todas as ${CONQUISTAS.length} conquistas`}</button>` : ''}`;
 }
 
-function cartaoSequencia(ctx, podeCompartilhar = false) {
+function cartaoSequencia(ctx) {
   const recorde = ctx.atual >= 2 && ctx.atual >= ctx.recorde ? 'Recorde atual! 🎉' : `Recorde: ${ctx.recorde}`;
   const semanas = ctx.semanasSeguidas ? ` · ${ctx.semanasSeguidas} ${ctx.semanasSeguidas === 1 ? 'semana completa' : 'semanas completas seguidas'}` : '';
   return `<div class="card row sequencia">
     <div class="fogo" aria-hidden="true">🔥</div>
     <div class="grow"><b class="tabular">${ctx.atual} ${ctx.atual === 1 ? 'treino seguido' : 'treinos seguidos'}</b>
       <p class="small muted">${recorde}${semanas}</p></div>
-    ${podeCompartilhar && ctx.atual >= 2 ? `<button class="mini ghost" data-compartilhar="sequencia" data-n="${ctx.atual}">Compartilhar</button>` : ''}
   </div>`;
-}
-
-// ---------- Cartão para compartilhar ----------
-// Desenha uma imagem 1080×1350 (bom para WhatsApp e Instagram) e abre o "compartilhar" do celular.
-async function gerarCartao({ emoji, titulo, linha1, linha2 }) {
-  try { await Promise.all([document.fonts.load('800 120px Archivo'), document.fonts.load('500 48px "DM Sans"')]); } catch { /* usa a fonte reserva */ }
-  const W = 1080, H = 1350;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const fundo = g.createLinearGradient(0, 0, W, H);
-  fundo.addColorStop(0, '#0F3D2E'); fundo.addColorStop(1, '#1E7A58');
-  g.fillStyle = fundo; g.fillRect(0, 0, W, H);
-  // Brilho suave atrás do emoji
-  const brilho = g.createRadialGradient(W / 2, 470, 20, W / 2, 470, 380);
-  brilho.addColorStop(0, 'rgba(76,199,154,0.45)'); brilho.addColorStop(1, 'rgba(76,199,154,0)');
-  g.fillStyle = brilho; g.fillRect(0, 0, W, H);
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '260px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-  g.fillText(emoji, W / 2, 470);
-  g.fillStyle = '#FFFFFF';
-  // Título quebrando em até 2 linhas
-  g.font = '800 104px Archivo, "Arial Narrow", sans-serif';
-  const palavras = titulo.split(' '); const linhas = [''];
-  palavras.forEach(p => { const t = (linhas.at(-1) + ' ' + p).trim(); if (g.measureText(t).width > W - 160 && linhas.at(-1)) linhas.push(p); else linhas[linhas.length - 1] = t; });
-  linhas.slice(0, 2).forEach((l, i) => g.fillText(l, W / 2, 800 + i * 116));
-  const y = 800 + Math.min(linhas.length, 2) * 116 + 30;
-  g.font = '500 50px "DM Sans", system-ui, sans-serif';
-  g.fillStyle = 'rgba(255,255,255,0.88)';
-  if (linha1) g.fillText(linha1, W / 2, y);
-  if (linha2) g.fillText(linha2, W / 2, y + 70);
-  g.font = '800 44px Archivo, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.95)';
-  g.fillText('TREINO JUNTO', W / 2, H - 120);
-  g.font = '500 34px "DM Sans", sans-serif'; g.fillStyle = 'rgba(255,255,255,0.7)';
-  g.fillText(hoje().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }), W / 2, H - 68);
-  return new Promise(r => c.toBlob(r, 'image/png'));
-}
-
-async function compartilharCartao(dados) {
-  const blob = await gerarCartao(dados);
-  const arquivo = new File([blob], 'treino-junto.png', { type: 'image/png' });
-  try {
-    if (navigator.canShare?.({ files: [arquivo] })) {
-      await navigator.share({ files: [arquivo], text: `${dados.emoji} ${dados.titulo} · Treino Junto` });
-      return;
-    }
-  } catch (err) { if (err.name === 'AbortError') return; }
-  // Sem "compartilhar" (computador): baixa a imagem
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'treino-junto.png';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-  toast('Imagem salva. Agora é só postar 📸');
-}
-
-// O que vai no cartão de cada coisa que dá para compartilhar
-function dadosDoCartao(b) {
-  const nome = (S.perfil?.nome || '').split(' ')[0];
-  if (b.dataset.compartilhar === 'casal') {
-    const n = +b.dataset.n;
-    return { emoji: '🔥', titulo: `${n} ${n === 1 ? 'dia' : 'dias'} treinando juntos`, linha1: `${nome} + ${b.dataset.nome}`, linha2: 'Um puxa o outro 💪' };
-  }
-  if (b.dataset.compartilhar === 'sequencia') {
-    const n = +b.dataset.n;
-    return { emoji: '🔥', titulo: `${n} ${n === 1 ? 'treino seguido' : 'treinos seguidos'}`, linha1: nome, linha2: 'Sem faltar nenhum dia de treino' };
-  }
-  const q = CONQUISTAS.find(x => x.id === b.dataset.compartilhar);
-  return q ? { emoji: q.icone, titulo: q.nome, linha1: `${nome} conquistou`, linha2: q.desc } : null;
 }
 
 // ---------- Calendário do ano (um quadradinho por dia, 52 semanas) ----------
@@ -1180,7 +1111,7 @@ function cartaoSequenciaCasal(atual, A, checkins) {
       <div class="row"><div class="fogo" aria-hidden="true">🔥</div>
         <div class="grow"><b class="tabular">${s.atual} ${s.atual === 1 ? 'dia' : 'dias'} treinando juntos</b>
           <p class="small muted">Recorde: ${s.recorde} · ${s.mes} ${s.mes === 1 ? 'dia' : 'dias'} juntos neste mês</p></div>
-        ${s.atual ? `<button class="mini ghost" data-compartilhar="casal" data-nome="${esc(nome)}" data-n="${s.atual}" aria-label="Compartilhar a sequência de vocês">Compartilhar</button>` : ''}</div>
+        </div>
       <p class="small muted">Conta quando os dois treinam no mesmo dia. Se alguém falta num dia de treino, recomeça; descanso não atrapalha.</p>
       ${elaMeVe ? '' : `<p class="small">Para ${esc(nome)} ver isso também, ela(e) precisa te acompanhar: passe o seu código (Perfil › Conexões).</p>`}
     </div></section>`;
@@ -1458,7 +1389,7 @@ function telaConquistas() {
   const ctx = contextoConquistas(S.plano, S.registros, S.checkins, S.pesos, S.perfil?.alturaCm);
   const qtd = CONQUISTAS.filter(q => S.perfil?.conquistas?.[q.id] || q.ok(ctx)).length;
   return `${cabecalho()}
-  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx, true)}</section>
+  <section class="block"><span class="label">Sequência</span>${cartaoSequencia(ctx)}</section>
   <section class="block"><div class="row between"><span class="label">Conquistas</span><span class="small muted tabular">${qtd} de ${CONQUISTAS.length}</span></div>
     ${gradeConquistas(ctx, S.perfil?.conquistas, true)}</section>`;
 }
@@ -1907,11 +1838,6 @@ document.addEventListener('click', e => {
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
     S.confirmar = null;
     salvar(Store.apagarMedida(uid(), b.dataset.apagarMedida), 'Medidas apagadas');
-    return;
-  }
-  if (b.dataset.compartilhar) {
-    const dados = dadosDoCartao(b);
-    if (dados) compartilharCartao(dados).catch(err => { console.error(err); toast('Não deu para gerar a imagem.'); });
     return;
   }
   if (b.dataset.diaHist) { S.diaHist = b.dataset.diaHist; render(); return; }

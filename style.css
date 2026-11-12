@@ -120,8 +120,6 @@ p { margin: 0; }
 .q.rest { background: var(--line); }
 .q.antes, .q.futuro { background: transparent; box-shadow: inset 0 0 0 1px var(--line); opacity: .5; }
 
-/* Cartão de compartilhar e sequência do casal */
-.selo .compartilhar { font-size: 11px; margin-top: 2px; }
 .casal .fogo { font-size: 30px; }
 
 /* Histórico */
