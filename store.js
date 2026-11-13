@@ -492,10 +492,24 @@ export async function avisar(evento) {
 }
 
 // Carga usada num exercício naquele dia (só anota; o exercício é marcado como feito à parte)
-export const anotarCarga = (uid, data, exId, nome, kg) =>
+// recorde = maior carga já usada nesse exercício (o script avisa quem acompanha)
+export const anotarCarga = (uid, data, exId, nome, kg, recorde = false) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {
-    cargas: { [exId]: kg === null ? deleteField() : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60) } },
+    cargas: { [exId]: kg === null ? deleteField()
+      : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60), ...(recorde ? { recorde: true } : {}) } },
     atualizadoEm: serverTimestamp(),
+  }, { merge: true });
+
+// Trocar o treino do dia (treinoDe = 0..6, dia da semana do treino escolhido) ou voltar ao normal (null)
+export const trocarTreino = (uid, data, treinoDe) =>
+  setDoc(doc(db, 'users', uid, 'registros', data), {
+    treinoDe: treinoDe === null ? deleteField() : treinoDe, atualizadoEm: serverTimestamp(),
+  }, { merge: true });
+
+// Dia justificado: 'doente' | 'viagem' | 'feriado' | 'outro', ou null para desfazer
+export const justificarDia = (uid, data, motivo) =>
+  setDoc(doc(db, 'users', uid, 'registros', data), {
+    justificado: motivo === null ? deleteField() : motivo, atualizadoEm: serverTimestamp(),
   }, { merge: true });
 
 // ---------- Fotos de antes e depois (privadas) ----------

@@ -245,3 +245,20 @@ describe('Sugestões, aparelhos e apagar conta', () => {
     await assertSucceeds(deleteDoc(doc(banco(ANA), 'users', ANA)));
   });
 });
+
+describe('Troca de treino, dia justificado e recorde', () => {
+  const reg = (u, data = '2026-11-12') => doc(banco(u), 'users', ANA, 'registros', data);
+  it('a Ana troca o treino do dia só por um dia da semana válido', async () => {
+    await assertSucceeds(setDoc(reg(ANA), { treinoDe: 1 }, { merge: true }));
+    await assertFails(setDoc(reg(ANA), { treinoDe: 7 }, { merge: true }));
+    await assertFails(setDoc(reg(ANA), { treinoDe: 'segunda' }, { merge: true }));
+  });
+  it('a Ana justifica o dia só com um motivo da lista', async () => {
+    await assertSucceeds(setDoc(reg(ANA), { justificado: 'viagem' }, { merge: true }));
+    await assertFails(setDoc(reg(ANA), { justificado: 'preguiça <b>' }, { merge: true }));
+  });
+  it('carga com marca de recorde é aceita; o Caio não mexe no registro da Ana', async () => {
+    await assertSucceeds(setDoc(reg(ANA), { cargas: { e1: { kg: 30, nome: 'Agachamento', recorde: true } } }, { merge: true }));
+    await assertFails(setDoc(reg(CAIO), { justificado: 'doente' }, { merge: true }));
+  });
+});

@@ -2,7 +2,7 @@
    Aba Juntos (check-in de quem você acompanha e o acompanhamento)
    e a lista de qual tela desenhar em cada aba (TELAS). */
 import { chaveAcomp } from '../app.js';
-import { DIAS, DIAS_NOME, S, esc, hoje, isoDe, meusAcompanhantes, nomeDe, quemAcompanho, resumoSemana, semanaAtual, statusDia } from './base.js';
+import { DIAS, DIAS_NOME, MOTIVOS, S, diaDoTreino, esc, hoje, isoDe, justificado, meusAcompanhantes, nomeDe, quemAcompanho, resumoSemana, semanaAtual, statusDia } from './base.js';
 import { telaAvisos, telaConexoes, telaDados } from './perfil.js';
 import { cartaoImc, cartaoMetaCasal, cartaoSequencia, cartaoSequenciaCasal, contextoConquistas, gradeConquistas, graficoFrequencia, graficoPeso, resumoPesoAcomp, semanasFrequencia, telaCargas, telaConquistas, telaFotos, telaFrequencia, telaMedidas, telaPeso, telaResumoMes, treinosNoMes } from './progresso.js';
 import { cabecalho, cartaoCheckin, cartaoTreino, legenda, secaoCheckinHoje, telaHistorico, telaHoje, telaSemana } from './treino.js';
@@ -69,7 +69,9 @@ export function telaAcompanhar() {
   } else {
     const r = resumoSemana(A.plano, A.registros, checkins);
     const d = hoje();
-    const planoHoje = A.plano[d.getDay()];
+    const diaHoje = diaDoTreino(hojeIso, A.plano, A.registros);
+    const planoHoje = A.plano[diaHoje];
+    const motivo = justificado(A.registros, hojeIso);
     const total = planoHoje?.exercicios?.length || 0;
     const marcados = A.registros[hojeIso]?.feitos || [];
     const feitos = total ? planoHoje.exercicios.filter(e => marcados.includes(e.id)).length : marcados.length;
@@ -77,10 +79,12 @@ export function telaAcompanhar() {
     const pill = !total ? (feitos || fezCheckin ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
       : feitos >= total ? '<span class="pill ok">Treino completo</span>'
       : feitos ? '<span class="pill wait">Treinando agora</span>'
-      : fezCheckin ? '<span class="pill ok">Na academia</span>' : '<span class="pill wait">Ainda não treinou</span>';
+      : fezCheckin ? '<span class="pill ok">Na academia</span>'
+      : motivo ? `<span class="pill just">${MOTIVOS[motivo]}</span>` : '<span class="pill wait">Ainda não treinou</span>';
     corpo = `
     <section class="block"><div class="row between"><span class="label">Treino de hoje</span>${pill}</div>
-      ${cartaoTreino(d.getDay(), hojeIso, A.plano, A.registros, false)}</section>
+      ${diaHoje !== d.getDay() ? `<p class="small muted">🔁 Hoje ${esc(nome)} trocou pelo treino de ${DIAS_NOME[diaHoje].toLowerCase()}.</p>` : ''}
+      ${cartaoTreino(diaHoje, hojeIso, A.plano, A.registros, false)}</section>
     <section class="block"><div class="row between"><span class="label">Semana</span><span class="small muted tabular">${r.planejados ? `${r.feitos} de ${r.planejados} treinos` : `${r.feitos} ${r.feitos === 1 ? 'treino' : 'treinos'}`}</span></div>
       <div class="week">${semana.map(x => `<div class="day ${statusDia(x, A.plano, A.registros, checkins)} ${isoDe(x) === hojeIso ? 'today' : ''}" aria-label="${DIAS_NOME[x.getDay()]}">
         <span>${DIAS[x.getDay()]}</span><b class="tabular">${x.getDate()}</b><span class="dot"></span></div>`).join('')}</div>

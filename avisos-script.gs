@@ -26,6 +26,7 @@ const REACOES = ['💪', '🔥', '❤️', '👏'];
 // ---------- Chamado pelo app ----------
 // { idToken, evento: 'checkin', checkinId }
 // { idToken, evento: 'reacao', atleta, checkinId }
+// { idToken, evento: 'recorde', exId }
 // (recados foram tirados do app; o evento 'recado' é ignorado)
 
 function doPost(e) {
@@ -37,6 +38,7 @@ function doPost(e) {
     if (dados.evento === 'checkin') avisarCheckin(uid, String(dados.checkinId || ''));
     else if (dados.evento === 'reacao') avisarReacao(uid, String(dados.atleta || ''), String(dados.checkinId || ''));
     else if (dados.evento === 'recado') return responder({ ok: true }); // recados foram tirados do app
+    else if (dados.evento === 'recorde') avisarRecorde(uid, String(dados.exId || '').slice(0, 40));
     else if (dados.evento === 'conquista') avisarConquista(uid, String(dados.id || ''), String(dados.nome || '').slice(0, 40));
     else if (dados.evento === 'metaBatida') avisarMetaBatida(uid, String(dados.conexaoId || ''));
     else if (dados.evento === 'sugestao') avisarSugestao(uid, String(dados.tipo || ''));
@@ -117,6 +119,23 @@ function avisarConquista(atleta, id, nome) {
     });
 }
 
+// Recorde de carga → avisa quem pode ver os treinos (só se a marca de recorde está mesmo no registro de hoje)
+function avisarRecorde(atleta, exId) {
+  if (!exId) return;
+  const reg = lerDoc('users/' + atleta + '/registros/' + hojeISO());
+  const c = reg && reg.cargas && reg.cargas[exId];
+  if (!c || c.recorde !== true || !c.nome) return;
+  const nome = nomeDe(atleta);
+  const kg = String(c.kg).replace('.', ',');
+  conexoesDe('atleta', atleta)
+    .filter(x => x.status === 'aceita' && x.perm && x.perm.treinos)
+    .forEach(x => {
+      if (!querAviso(x.viewer, 'conquistas')) return;
+      notificar(x.viewer, '🏆 ' + nome + ' bateu um recorde!', c.nome + ': ' + kg + ' kg. Manda os parabéns!',
+        SITE_URL + '#acompanhar', 'recorde-' + atleta + '-' + exId);
+    });
+}
+
 // Meta do casal batida → avisa quem acompanha (o script reconta os treinos do mês)
 function avisarMetaBatida(atleta, conexaoId) {
   const c = lerDoc('conexoes/' + conexaoId);
@@ -159,14 +178,16 @@ function resumoSemanal(pessoas, conexoes) {
     try {
       const plano = {};
       listar('users/' + u.id + '/plano').forEach(p => { plano[p.id] = { tem: (p.exercicios || []).length > 0, desde: p.desde || '' }; });
-      // segunda = 1 ... domingo = 0; dias antes de o treino ser montado não contam
+      const regs = {};
+      semana.forEach(d => { regs[d] = lerDoc('users/' + u.id + '/registros/' + d); });
+      // segunda = 1 ... domingo = 0; dias antes de o treino ser montado e dias justificados não contam
       const planejados = semana.filter((d, i) => {
         const p = plano[String((i + 1) % 7)];
-        return p && p.tem && (!p.desde || d >= p.desde);
+        return p && p.tem && (!p.desde || d >= p.desde) && !(regs[d] && regs[d].justificado);
       }).length;
       const treinou = {};
       buscar('users/' + u.id, 'checkins', 'data', semana[0], 'GREATER_THAN_OR_EQUAL').forEach(c => { treinou[c.data] = true; });
-      semana.forEach(d => { const r = lerDoc('users/' + u.id + '/registros/' + d); if (r && (r.feitos || []).length) treinou[d] = true; });
+      semana.forEach(d => { const r = regs[d]; if (r && (r.feitos || []).length) treinou[d] = true; });
       const feitos = semana.filter(d => treinou[d]).length;
       if (!planejados && !feitos) return; // não usou o app esta semana
 
@@ -241,9 +262,10 @@ function lembreteDiario() {
   });
 }
 
+// Treinou hoje, ou marcou o dia como justificado (doente, viagem…): nos dois casos, sem lembrete
 function treinouHoje(uid, hoje) {
   const reg = lerDoc('users/' + uid + '/registros/' + hoje);
-  if (reg && (reg.feitos || []).length) return true;
+  if (reg && ((reg.feitos || []).length || reg.justificado)) return true;
   return buscar('users/' + uid, 'checkins', 'data', hoje).length > 0;
 }
 

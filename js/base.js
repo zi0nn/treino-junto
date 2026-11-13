@@ -143,12 +143,29 @@ export function temTreinoNoDia(planoSemana, d) {
   return !!(plano?.exercicios?.length && (!plano.desde || isoDe(d) >= plano.desde));
 }
 
+// Dia justificado (doente, viagem…): não conta como falta nem quebra a sequência
+export const MOTIVOS = { doente: '🤒 Doente', viagem: '✈️ Viagem', feriado: '🎉 Feriado', outro: '🙅 Outro motivo' };
+export const justificado = (registros, data) => MOTIVOS[registros[data]?.justificado] ? registros[data].justificado : null;
+
+// Tinha treino planejado e não foi justificado? (é o que conta como "planejado" nos resumos)
+export function planejadoNoDia(planoSemana, d, registros = S.registros) {
+  return temTreinoNoDia(planoSemana, d) && !justificado(registros, isoDe(d));
+}
+
+// Qual treino vale num dia: o do dia da semana, ou outro que a pessoa escolheu fazer naquele dia
+export function diaDoTreino(data, planoSemana = S.plano, registros = S.registros) {
+  const troca = registros[data]?.treinoDe;
+  if (Number.isInteger(troca) && planoSemana[troca]?.exercicios?.length) return troca;
+  return new Date(`${data}T12:00:00`).getDay();
+}
+
 export function statusDia(d, planoSemana = S.plano, registros = S.registros, checkins = S.checkins) {
   const data = isoDe(d);
   const temTreino = temTreinoNoDia(planoSemana, d);
   const feitos = registros[data]?.feitos?.length || 0;
   if (feitos || checkins.some(c => c.data === data)) return 'done';
   if (!temTreino) return 'rest';
+  if (justificado(registros, data)) return 'just';
   const hojeIso = isoDe(hoje());
   if (data < hojeIso) return 'missed';
   return 'future';
@@ -157,7 +174,7 @@ export function resumoSemana(planoSemana = S.plano, registros = S.registros, che
   const semana = semanaAtual();
   return {
     feitos: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'done').length,
-    planejados: semana.filter(d => temTreinoNoDia(planoSemana, d)).length,
+    planejados: semana.filter(d => planejadoNoDia(planoSemana, d, registros)).length,
     faltas: semana.filter(d => statusDia(d, planoSemana, registros, checkins) === 'missed').length,
   };
 }

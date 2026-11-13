@@ -3,7 +3,7 @@
   --bg: #EEF2EF; --surface: #FFFFFF; --ink: #13201A; --muted: #5B6A63; --line: #D8E0DB;
   --accent: #1E7A58; --accent-soft: #DCEFE6; --hot: #D9482F; --hot-soft: #FBE3DE;
   --warn: #B7791F; --warn-soft: #F8EBD3;
-  --plan: #3B78D8; --plan-soft: #DCE7FA; --rest: #7F8C86;
+  --plan: #3B78D8; --plan-soft: #DCE7FA; --rest: #7F8C86; --just: #A8701A; --just-soft: #FBF0D9;
   --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
   --body: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
@@ -15,7 +15,7 @@
     --bg: #0E1412; --surface: #17201C; --ink: #E6EEE9; --muted: #93A39B; --line: #26322D;
     --accent: #4CC79A; --accent-soft: #173A2D; --hot: #FF7B63; --hot-soft: #3C1D17;
     --warn: #E3B05A; --warn-soft: #3A2D16;
-    --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC;
+    --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC; --just: #E2B04A; --just-soft: #3A2E14;
     color-scheme: dark;
   }
 }
@@ -23,7 +23,7 @@
   --bg: #0E1412; --surface: #17201C; --ink: #E6EEE9; --muted: #93A39B; --line: #26322D;
   --accent: #4CC79A; --accent-soft: #173A2D; --hot: #FF7B63; --hot-soft: #3C1D17;
   --warn: #E3B05A; --warn-soft: #3A2D16;
-  --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC;
+  --plan: #6FA4F5; --plan-soft: #1D2E4A; --rest: #A5B3AC; --just: #E2B04A; --just-soft: #3A2E14;
   color-scheme: dark;
 }
 
@@ -100,6 +100,8 @@ p { margin: 0; }
 .day.missed { background: var(--hot-soft); border-color: transparent; }
 .day.missed .dot { background: var(--hot); }
 .day.rest .dot { background: transparent; border: 2px solid var(--rest); }
+.day.just { background: var(--just-soft); border-color: transparent; }
+.day.just .dot { background: var(--just); }
 .day.today { border: 2px solid var(--ink); }
 .day.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
@@ -122,6 +124,7 @@ p { margin: 0; }
 .pill.wait { background: var(--warn-soft); color: var(--warn); }
 .pill.bad { background: var(--hot-soft); color: var(--hot); }
 .pill.plan { background: var(--plan-soft); color: var(--plan); }
+.pill.just { background: var(--just-soft); color: var(--just); }
 .pill:not(.ok):not(.wait):not(.bad):not(.plan) { background: var(--line); color: var(--muted); }
 
 /* Calendário do ano */
@@ -133,6 +136,7 @@ p { margin: 0; }
 .q.done { background: var(--accent); }
 .q.missed { background: var(--hot-soft); box-shadow: inset 0 0 0 1px var(--hot); }
 .q.rest { background: transparent; box-shadow: inset 0 0 0 2px var(--rest); }
+.q.just { background: var(--just-soft); box-shadow: inset 0 0 0 1px var(--just); }
 .q.antes, .q.futuro { background: transparent; box-shadow: inset 0 0 0 1px var(--line); opacity: .5; }
 
 .casal .fogo { font-size: 30px; }
@@ -145,6 +149,7 @@ p { margin: 0; }
 .cal-dia.done { background: var(--accent); border-color: transparent; color: var(--surface); }
 .cal-dia.missed { background: var(--hot-soft); border-color: transparent; color: var(--hot); }
 .cal-dia.rest { color: var(--muted); border: 2px solid var(--rest); }
+.cal-dia.just { background: var(--just-soft); border: 1px dashed var(--just); color: var(--just); }
 .cal-dia.future { border: 2px solid var(--plan); color: var(--plan); }
 .cal-dia.today { box-shadow: inset 0 0 0 2px var(--ink); }
 .cal-dia.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -167,6 +172,9 @@ p { margin: 0; }
 .timer .mini.ghost { color: var(--bg); border-color: color-mix(in srgb, var(--bg) 35%, transparent); }
 .timer .bar { background: color-mix(in srgb, var(--bg) 25%, transparent); height: 6px; }
 .timer-padrao { color: var(--bg); text-decoration: underline; text-align: left; }
+/* Cronômetro de exercício de tempo: faixa verde em cima para não confundir com o descanso */
+.timer.exercicio { box-shadow: inset 0 4px 0 var(--accent), 0 -4px 16px rgb(0 0 0 / .2); }
+.timer.exercicio .bar i { background: var(--accent); }
 /* Com o cronômetro na tela, o conteúdo e os avisos sobem para não ficarem escondidos */
 body:has(#timer:not([hidden])) .app { padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px)); }
 body:has(#timer:not([hidden])) .toast { bottom: calc(180px + env(safe-area-inset-bottom, 0px)); }
@@ -215,6 +223,9 @@ body:has(#timer:not([hidden])) .toast { bottom: calc(180px + env(safe-area-inset
 .stat b { font-family: var(--display); font-size: 24px; font-weight: 800; }
 .aviso { border-color: var(--accent); background: var(--accent-soft); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.opcoes-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin-top: 10px; }
+.opcoes-dia { margin-top: 10px; }
+.aviso-just { gap: 10px; align-items: center; border-color: var(--just); background: var(--just-soft); margin-bottom: 10px; }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .badge { position: absolute; margin-left: 18px; margin-top: -4px; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px;
   background: var(--hot); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }

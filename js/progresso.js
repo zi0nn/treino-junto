@@ -3,7 +3,7 @@
    sequências (sua e do casal), frequência, calendário do ano e meta do casal. */
 import * as Store from '../store.js';
 import { render, uid } from '../app.js';
-import { DATA_MIN, S, SEMANAS_HISTORICO, esc, hoje, isoDe, mensagemErro, meuUid, meusAcompanhantes, nomeDe, resumoSemana, semanaAtual, statusDia, temTreinoNoDia, toast } from './base.js';
+import { DATA_MIN, S, SEMANAS_HISTORICO, esc, hoje, isoDe, mensagemErro, meuUid, meusAcompanhantes, nomeDe, planejadoNoDia, resumoSemana, semanaAtual, statusDia, toast } from './base.js';
 import { cabecalho } from './treino.js';
 
 // ---------- Progresso: peso e frequência ----------
@@ -27,7 +27,7 @@ export function semanasFrequencia(planoSemana, registros, checkins, quantas = SE
     for (let i = 0; i < 7; i++) {
       const d = new Date(seg); d.setDate(seg.getDate() + i);
       if (isoDe(d) > hojeIso) break;
-      if (temTreinoNoDia(planoSemana, d)) planejados++;
+      if (planejadoNoDia(planoSemana, d, registros)) planejados++;
       if (statusDia(d, planoSemana, registros, checkins) === 'done') feitos++;
     }
     semanas.push({ inicio: isoDe(seg), feitos, planejados, atual: n === 0 });
@@ -82,6 +82,12 @@ export function historicoCargas(registros) {
   return porNome;
 }
 
+// Maior carga já usada nesse exercício antes do dia informado (null se nunca anotou)
+export function recordeAntes(nome, data, registros = S.registros) {
+  const pts = (historicoCargas(registros)[nome] || []).filter(p => p.data < data);
+  return pts.length ? Math.max(...pts.map(p => p.kg)) : null;
+}
+
 // Campo de carga ao lado do exercício: sugere a última carga usada (ou a do plano)
 // Sugestão de carga para hoje, olhando os treinos anteriores do mesmo exercício:
 // - mesma carga nos 2 últimos treinos → hora de subir um pouco
@@ -101,8 +107,15 @@ export function sugestaoCarga(nome) {
 }
 
 // Exercício medido em tempo ("25 min", "30 s") e sem carga no plano: esteira, prancha, bicicleta…
-export const porTempo = e => !String(e.carga || '').trim()
-  && /\d\s*(s|seg|segundos?|min|minutos?|h|horas?)\.?\s*$/i.test(String(e.reps || ''));
+// Duração em segundos de um exercício de tempo ("30 s" → 30, "25 min" → 1500); null se não for de tempo
+export function duracaoEx(e) {
+  const m = String(e?.reps || '').match(/(\d+(?:[.,]\d+)?)\s*(s|seg|segundos?|min|minutos?|h|horas?)\.?\s*$/i);
+  if (!m) return null;
+  const n = Number(m[1].replace(',', '.')), u = m[2].toLowerCase();
+  const seg = Math.round(n * (u.startsWith('h') ? 3600 : u.startsWith('m') ? 60 : 1));
+  return seg >= 5 && seg <= 3 * 3600 ? seg : null;
+}
+export const porTempo = e => !String(e.carga || '').trim() && duracaoEx(e) !== null;
 
 export function campoCarga(e, kgHoje) {
   if (kgHoje == null && porTempo(e)) return ''; // não tem peso para anotar
@@ -297,7 +310,7 @@ export function calendarioAno() {
           ${semanas.map((s, w) => s.map((dia, i) => `<i class="q ${dia.st}" style="grid-column:${w + 2};grid-row:${i + 2}" title="${dataCurta(dia.iso)}"></i>`).join('')).join('')}
         </div>
       </div>
-      <div class="legend" style="margin-top:10px"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot-soft);border:1px solid var(--hot)"></i>Faltou</span><span><i style="border:2px solid var(--rest);background:transparent"></i>Descanso</span></div>
+      <div class="legend" style="margin-top:10px"><span><i style="background:var(--accent)"></i>Treinou</span><span><i style="background:var(--hot-soft);border:1px solid var(--hot)"></i>Faltou</span><span><i style="border:2px solid var(--rest);background:transparent"></i>Descanso</span><span><i style="background:var(--just-soft);border:1px dashed var(--just)"></i>Justificado</span></div>
     </div>
     ${melhor ? `<p class="small muted">Mês mais forte: <b>${new Date(melhor[0] + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b>, com ${melhor[1]} ${melhor[1] === 1 ? 'dia' : 'dias'} de treino.</p>` : ''}
   </section>`;
@@ -637,7 +650,7 @@ export function resumoDoMes(mes) {
   const st = dias.map(d => statusDia(d));
   const treinos = st.filter(s => s === 'done').length;
   const faltas = st.filter(s => s === 'missed').length;
-  const planejados = dias.filter(d => temTreinoNoDia(S.plano, d)).length;
+  const planejados = dias.filter(d => planejadoNoDia(S.plano, d)).length;
   // Maior sequência dentro do mês
   let seq = 0, melhorSeq = 0;
   st.forEach(s => { if (s === 'done') { seq++; melhorSeq = Math.max(melhorSeq, seq); } else if (s === 'missed') seq = 0; });

@@ -60,9 +60,15 @@ service cloud.firestore {
         allow read: if eu(uid) || liberado(uid, 'treinos');
         allow delete: if eu(uid);
         allow write: if eu(uid) && data.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-          && request.resource.data.keys().hasOnly(['feitos', 'atualizadoEm', 'cargas'])
+          && request.resource.data.keys().hasOnly(['feitos', 'atualizadoEm', 'cargas', 'treinoDe', 'justificado'])
           && (!('feitos' in request.resource.data) || (request.resource.data.feitos is list && request.resource.data.feitos.size() <= 40))
-          && (!('cargas' in request.resource.data) || (request.resource.data.cargas is map && request.resource.data.cargas.size() <= 40));
+          && (!('cargas' in request.resource.data) || (request.resource.data.cargas is map && request.resource.data.cargas.size() <= 40))
+          // Treino trocado só naquele dia (0 = domingo … 6 = sábado)
+          && (!('treinoDe' in request.resource.data) || (request.resource.data.treinoDe is int
+              && request.resource.data.treinoDe >= 0 && request.resource.data.treinoDe <= 6))
+          // Dia justificado: não conta como falta
+          && (!('justificado' in request.resource.data)
+              || request.resource.data.justificado in ['doente', 'viagem', 'feriado', 'outro']);
       }
 
       // Fotos de antes e depois: privadas, só a dona vê

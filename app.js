@@ -7,11 +7,11 @@
    Os dados (Firebase) ficam em store.js.
    ========================================================= */
 import * as Store from './store.js';
-import { $, DATA_MIN, DIAS_NOME, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, numero, pad, quemAcompanho, toast } from './js/base.js';
+import { $, DATA_MIN, DIAS_NOME, MOTIVOS, diaDoTreino, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, numero, pad, quemAcompanho, toast } from './js/base.js';
 import { TELAS } from './js/juntos.js';
 import { ativarAvisos, escolherTema, estadoAvisos, permissao, temaAtual } from './js/perfil.js';
-import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
-import { MODELOS, ajustarDescanso, exercicioDeHoje, guardarSeries, iniciarDescanso, marcarSerie, pararDescanso, prepararFoto, salvarDescansoPadrao, seriesFeitas, telaLogin, telaSemConfig, entrarModoTreino, sairModoTreino, telaModoTreino } from './js/treino.js';
+import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, recordeAntes, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
+import { MODELOS, ajustarDescanso, exercicioDeHoje, guardarSeries, iniciarCronometro, iniciarDescanso, marcarSerie, pararDescanso, prepararFoto, salvarDescansoPadrao, seriesFeitas, telaLogin, telaSemConfig, entrarModoTreino, sairModoTreino, telaModoTreino } from './js/treino.js';
 
 // ---------- Primeiro acesso guiado ----------
 export const temAlgumTreino = () => Object.values(S.plano).some(p => p?.exercicios?.length);
@@ -404,7 +404,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.dataset.modoIr && S.modo) {
-    const n = (S.plano[hoje().getDay()]?.exercicios || []).length;
+    const n = (S.plano[diaDoTreino(isoDe(hoje()))]?.exercicios || []).length;
     if (n) S.modo.i = ((S.modo.i < 0 ? 0 : S.modo.i) + +b.dataset.modoIr + n) % n;
     render(); return;
   }
@@ -419,6 +419,22 @@ document.addEventListener('click', e => {
   }
   if (b.dataset.serie) { marcarSerie(b.dataset.serie); return; }
   if (b.dataset.descansar) { const exercicio = exercicioDeHoje(b.dataset.descansar); if (exercicio) iniciarDescanso(exercicio); return; }
+  if (b.dataset.cronometro) { const exercicio = exercicioDeHoje(b.dataset.cronometro); if (exercicio) iniciarCronometro(exercicio); return; }
+  if (b.dataset.opcaoHoje !== undefined) { S.opcaoHoje = b.dataset.opcaoHoje || null; render(); return; }
+  if (b.dataset.trocarTreino !== undefined) {
+    const dia = b.dataset.trocarTreino === '' ? null : +b.dataset.trocarTreino;
+    S.opcaoHoje = null;
+    pararDescanso();
+    salvar(Store.trocarTreino(uid(), isoDe(hoje()), dia === hoje().getDay() ? null : dia),
+      dia === null ? 'Voltou ao treino normal de hoje' : `Hoje: treino de ${DIAS_NOME[dia].toLowerCase()} 🔁`);
+    return;
+  }
+  if (b.dataset.justificar !== undefined) {
+    const motivo = b.dataset.justificar || null, data = b.dataset.data || isoDe(hoje());
+    S.opcaoHoje = null;
+    salvar(Store.justificarDia(uid(), data, motivo), motivo ? `Dia marcado: ${MOTIVOS[motivo]}` : 'Justificativa desfeita');
+    return;
+  }
   if (b.dataset.timer) {
     const t = b.dataset.timer;
     if (t === 'fechar') pararDescanso(); else if (t === 'padrao') salvarDescansoPadrao(); else ajustarDescanso(+t);
@@ -481,7 +497,7 @@ document.addEventListener('click', e => {
     salvar(Store.marcarExercicio(uid(), data, id, feito));
     // Marcou direto: todas as séries contam como feitas; desmarcou: zera as séries
     const series = seriesFeitas(); series[id] = feito ? (exercicioDeHoje(id)?.series || 1) : 0; guardarSeries(series);
-    const plano = S.plano[hoje().getDay()];
+    const plano = S.plano[diaDoTreino(data)];
     const depois = new Set(S.registros[data]?.feitos || []); feito ? depois.add(id) : depois.delete(id);
     if (feito && plano && plano.exercicios.every(x => depois.has(x.id))) toast('Treino completo! Arrasou 💪');
     return;
@@ -607,7 +623,15 @@ document.addEventListener('change', e => {
       t.value = antes != null ? kgBR(antes) : '';
       return;
     }
-    salvar(Store.anotarCarga(uid(), isoDe(hoje()), t.dataset.carga, t.dataset.nome, kg), kg === null ? 'Carga apagada' : `Carga anotada: ${kgBR(kg)} kg`);
+    const data = isoDe(hoje()), exId = t.dataset.carga, nome = t.dataset.nome;
+    // Recorde: passou da maior carga que já tinha usado nesse exercício (precisa ter histórico antes de hoje)
+    const anterior = recordeAntes(nome, data);
+    const recorde = kg !== null && kg > 0 && anterior !== null && kg > anterior;
+    const jaAvisado = S.registros[data]?.cargas?.[exId]?.recorde;
+    salvar(Store.anotarCarga(uid(), data, exId, nome, kg, recorde).then(() => {
+      if (recorde && !jaAvisado) Store.avisar({ evento: 'recorde', exId });
+    }), kg === null ? 'Carga apagada'
+      : recorde ? `🏆 Novo recorde em ${nome}: ${kgBR(kg)} kg (antes ${kgBR(anterior)} kg)` : `Carga anotada: ${kgBR(kg)} kg`);
     return;
   }
   if (t.id === 'fotoAntesSel') { S.fotoAntes = t.value; render(); return; }
