@@ -495,8 +495,9 @@ export async function avisar(evento) {
 // recorde = maior carga já usada nesse exercício (o script avisa quem acompanha)
 export const anotarCarga = (uid, data, exId, nome, kg, recorde = false) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {
+    // (com merge, o objeto se mistura com o anterior: por isso o recorde é apagado de propósito quando não vale mais)
     cargas: { [exId]: kg === null ? deleteField()
-      : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60), ...(recorde ? { recorde: true } : {}) } },
+      : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60), recorde: recorde ? true : deleteField() } },
     atualizadoEm: serverTimestamp(),
   }, { merge: true });
 
