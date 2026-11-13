@@ -71,7 +71,8 @@ export function telaAcompanhar() {
     const d = hoje();
     const planoHoje = A.plano[d.getDay()];
     const total = planoHoje?.exercicios?.length || 0;
-    const feitos = A.registros[hojeIso]?.feitos?.length || 0;
+    const marcados = A.registros[hojeIso]?.feitos || [];
+    const feitos = total ? planoHoje.exercicios.filter(e => marcados.includes(e.id)).length : marcados.length;
     const fezCheckin = checkins.some(c => c.data === hojeIso);
     const pill = !total ? (feitos || fezCheckin ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')
       : feitos >= total ? '<span class="pill ok">Treino completo</span>'

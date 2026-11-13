@@ -414,9 +414,11 @@ export function prepararFoto(arquivo) {
 
 export function telaHoje() {
   const d = hoje();
-  const r = resumoSemana();
   const plano = S.plano[d.getDay()];
-  const feitos = S.registros[isoDe(d)]?.feitos?.length || 0;
+  const r = resumoSemana();
+  const marcados = S.registros[isoDe(d)]?.feitos || [];
+  // Só conta o que ainda está no plano (um exercício removido depois de feito não vale mais)
+  const feitos = plano?.exercicios?.length ? plano.exercicios.filter(e => marcados.includes(e.id)).length : marcados.length;
   const total = plano?.exercicios?.length || 0;
   const fezCheckin = S.checkins.some(c => c.data === isoDe(d));
   const pill = !total ? (feitos || fezCheckin ? '<span class="pill ok">Treinou</span>' : '<span class="pill ok">Descanso</span>')

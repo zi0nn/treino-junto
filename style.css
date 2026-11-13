@@ -30,6 +30,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.45; -webkit-tap-highlight-color: transparent; }
+/* Texto digitado sem espaços (legenda, nome) quebra a linha em vez de alargar a tela */
+p, h1, h2, h3, li, td, label, .small, .chip { overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
