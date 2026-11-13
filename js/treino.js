@@ -5,7 +5,7 @@ import * as Store from '../store.js';
 import { render, salvar, uid } from '../app.js';
 import { $, ABAS, DIAS, DIAS_NOME, S, SUGESTOES, app, esc, hoje, isoDe, meuUid, mostrarNav, nomeDe, pad, pedidosRecebidos, resumoSemana, semanaAtual, statusDia, subnav, temTreinoNoDia, toast } from './base.js';
 import { convitAvisos, permissao } from './perfil.js';
-import { campoCarga, convitResumoMes, diaDe, kgBR, sequencias, sugestaoCarga } from './progresso.js';
+import { campoCarga, convitResumoMes, diaDe, kgBR, porTempo, sequencias, sugestaoCarga } from './progresso.js';
 
 // ---------- Telas ----------
 export function telaSemConfig() {
@@ -73,7 +73,9 @@ export function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.reg
         ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : registros[data]?.cargas?.[e.id] ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
     }).join('')}</div></div>`;
 }
-export const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(e.carga), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
+// Carga do plano só com número ("40") ganha o "kg" para não ficar ambígua
+const cargaPlano = c => /^\d+([.,]\d+)?$/.test(String(c).trim()) ? `${String(c).trim()} kg` : c;
+export const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(cargaPlano(e.carga)), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
 
 // Dica de carga embaixo do exercício (some depois que o exercício é feito)
 export function linhaSugestao(e) {
@@ -275,7 +277,7 @@ export function telaModoTreino() {
       <h1 class="modo-nome">${esc(e.nome)}</h1>
       <p class="muted tabular">${descricaoEx(e)}</p>
       ${ok ? '' : linhaSugestao(e)}
-      <div class="modo-carga"><span class="label">Carga de hoje</span>${campoCarga(e, kgHoje)}</div>
+      ${kgHoje == null && porTempo(e) ? '' : `<div class="modo-carga"><span class="label">Carga de hoje</span>${campoCarga(e, kgHoje)}</div>`}
       <div class="modo-series" aria-label="Série ${Math.min(feitas + 1, total)} de ${total}">
         ${Array.from({ length: total }, (_, k) => `<i class="${k < feitas ? 'on' : ''}"></i>`).join('')}
       </div>

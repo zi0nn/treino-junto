@@ -100,7 +100,12 @@ export function sugestaoCarga(nome) {
   return { kg: ultima.kg, subir: false, ultima, texto: `Último treino: ${kgBR(ultima.kg)} kg (${dataCurta(ultima.data)}). Repita até ficar confortável.` };
 }
 
+// Exercício medido em tempo ("25 min", "30 s") e sem carga no plano: esteira, prancha, bicicleta…
+export const porTempo = e => !String(e.carga || '').trim()
+  && /\d\s*(s|seg|segundos?|min|minutos?|h|horas?)\.?\s*$/i.test(String(e.reps || ''));
+
 export function campoCarga(e, kgHoje) {
+  if (kgHoje == null && porTempo(e)) return ''; // não tem peso para anotar
   const doPlano = parseFloat(String(e.carga || '').replace(',', '.'));
   const sug = sugestaoCarga(e.nome);
   const sugestao = sug?.kg ?? (Number.isFinite(doPlano) ? doPlano : null);
