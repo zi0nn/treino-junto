@@ -491,11 +491,10 @@ export async function avisar(evento) {
   } catch (err) { console.warn('Aviso não enviado', err); }
 }
 
-// Carga usada num exercício naquele dia (anotar a carga já conta o exercício como feito)
+// Carga usada num exercício naquele dia (só anota; o exercício é marcado como feito à parte)
 export const anotarCarga = (uid, data, exId, nome, kg) =>
   setDoc(doc(db, 'users', uid, 'registros', data), {
     cargas: { [exId]: kg === null ? deleteField() : { kg: Math.round(kg * 10) / 10, nome: String(nome).slice(0, 60) } },
-    ...(kg === null ? {} : { feitos: arrayUnion(exId) }),
     atualizadoEm: serverTimestamp(),
   }, { merge: true });
 
