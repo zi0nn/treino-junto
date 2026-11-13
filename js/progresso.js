@@ -3,7 +3,7 @@
    sequências (sua e do casal), frequência, calendário do ano e meta do casal. */
 import * as Store from '../store.js';
 import { render, uid } from '../app.js';
-import { S, SEMANAS_HISTORICO, esc, hoje, isoDe, mensagemErro, meuUid, meusAcompanhantes, nomeDe, resumoSemana, semanaAtual, statusDia, temTreinoNoDia, toast } from './base.js';
+import { DATA_MIN, S, SEMANAS_HISTORICO, esc, hoje, isoDe, mensagemErro, meuUid, meusAcompanhantes, nomeDe, resumoSemana, semanaAtual, statusDia, temTreinoNoDia, toast } from './base.js';
 import { cabecalho } from './treino.js';
 
 // ---------- Progresso: peso e frequência ----------
@@ -517,7 +517,7 @@ export function secaoMedidas() {
       <div class="card">${graficoLinha('medida-' + sel, pontos, null, 'cm', MEDIDAS.find(m => m[0] === sel)[1].toLowerCase())}</div>`
       : '<p class="small muted">Meça uma vez por mês, sempre no mesmo lugar: cintura na altura do umbigo, quadril na parte mais larga e braço no meio, relaxado.</p>'}
     <form id="formMedida" class="card stack">
-      <div class="field"><label class="label" for="medData">Dia</label><input id="medData" type="date" max="${isoDe(hoje())}" value="${isoDe(hoje())}" required></div>
+      <div class="field"><label class="label" for="medData">Dia</label><input id="medData" type="date" min="${DATA_MIN}" max="${isoDe(hoje())}" value="${isoDe(hoje())}" required></div>
       <div class="grid3">${MEDIDAS.map(([k, nome]) => `<div class="field"><label class="label" for="med-${k}">${nome}</label>
         <input id="med-${k}" type="text" inputmode="decimal" autocomplete="off" maxlength="5" placeholder="cm"></div>`).join('')}</div>
       <button class="btn" type="submit">Registrar medidas</button>
@@ -591,7 +591,7 @@ export function telaPeso() {
     <div class="card">${graficoPeso('meuPeso', S.pesos, meta)}</div>
     <form id="formPeso" class="card stack">
       <div class="row">
-        <div class="field grow"><label class="label" for="pesoData">Dia</label><input id="pesoData" type="date" max="${isoDe(hoje())}" value="${isoDe(hoje())}" required></div>
+        <div class="field grow"><label class="label" for="pesoData">Dia</label><input id="pesoData" type="date" min="${DATA_MIN}" max="${isoDe(hoje())}" value="${isoDe(hoje())}" required></div>
         <div class="field grow"><label class="label" for="pesoKg">Peso (kg)</label><input id="pesoKg" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="${S.pesos.at(-1) ? kgBR(S.pesos.at(-1).kg) : 'Ex.: 72,5'}" required></div>
       </div>
       <button class="btn" type="submit">Registrar peso</button>

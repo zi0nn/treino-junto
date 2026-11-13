@@ -7,7 +7,7 @@
    Os dados (Firebase) ficam em store.js.
    ========================================================= */
 import * as Store from './store.js';
-import { $, DIAS_NOME, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, pad, quemAcompanho, toast } from './js/base.js';
+import { $, DATA_MIN, DIAS_NOME, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, numero, pad, quemAcompanho, toast } from './js/base.js';
 import { TELAS } from './js/juntos.js';
 import { ativarAvisos, escolherTema, estadoAvisos, permissao, temaAtual } from './js/perfil.js';
 import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
@@ -600,9 +600,13 @@ document.addEventListener('change', e => {
     return;
   }
   if (t.dataset.carga) {
-    const txt = t.value.trim();
-    const kg = txt ? parseFloat(txt.replace(',', '.')) : null;
-    if (txt && !(kg >= 0 && kg <= 500)) { toast('Digite a carga em kg, por exemplo 22,5.'); return; }
+    const kg = numero(t.value);
+    if (kg !== null && !(kg >= 0 && kg <= 500)) {
+      toast('Digite a carga em kg, por exemplo 22,5.');
+      const antes = S.registros[isoDe(hoje())]?.cargas?.[t.dataset.carga]?.kg;
+      t.value = antes != null ? kgBR(antes) : '';
+      return;
+    }
     salvar(Store.anotarCarga(uid(), isoDe(hoje()), t.dataset.carga, t.dataset.nome, kg), kg === null ? 'Carga apagada' : `Carga anotada: ${kgBR(kg)} kg`);
     return;
   }
@@ -712,12 +716,11 @@ document.addEventListener('submit', async e => {
 
   if (f.id === 'formBv1') {
     const nome = $('#bvNome').value.trim() || S.perfil?.nome || 'Você';
-    let altura = parseFloat($('#bvAltura').value.replace(',', '.'));
+    let altura = numero($('#bvAltura').value);
     if (altura > 0 && altura < 3) altura *= 100;
-    altura = Number.isFinite(altura) ? Math.round(altura) : null;
-    const pesoTxt = $('#bvPeso').value.trim();
-    const peso = pesoTxt ? parseFloat(pesoTxt.replace(',', '.')) : null;
-    if (altura !== null && (altura < 100 || altura > 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
+    if (altura !== null) altura = Math.round(altura);
+    const peso = numero($('#bvPeso').value);
+    if (altura !== null && !(altura >= 100 && altura <= 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
     if (peso !== null && !(peso >= 20 && peso <= 300)) return toast('Digite o peso em kg, por exemplo 72,5.');
     try {
       await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), alturaCm: altura });
@@ -787,12 +790,12 @@ document.addEventListener('submit', async e => {
     for (const [k, nome] of MEDIDAS) {
       const txt = $(`#med-${k}`).value.trim();
       if (!txt) continue;
-      const v = parseFloat(txt.replace(',', '.'));
+      const v = numero(txt);
       if (!Number.isFinite(v) || v < 10 || v > 250) return toast(`${nome}: digite em centímetros, por exemplo 82,5.`);
       medidas[k] = v;
     }
     if (!Object.keys(medidas).length) return toast('Preencha pelo menos uma medida.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > isoDe(hoje())) return toast('Escolha um dia até hoje.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > isoDe(hoje()) || data < DATA_MIN) return toast('Escolha um dia entre 2015 e hoje.');
     // Mesmo dia: junta com o que já tinha (ex.: mediu a cintura de manhã e o quadril depois)
     const antes = S.medidas.find(m => m.data === data) || {};
     const juntas = {};
@@ -804,10 +807,10 @@ document.addEventListener('submit', async e => {
   }
 
   if (f.id === 'formPeso') {
-    const kg = parseFloat(String($('#pesoKg').value).replace(',', '.'));
+    const kg = numero($('#pesoKg').value);
     const data = $('#pesoData').value;
     if (!Number.isFinite(kg) || kg < 20 || kg > 300) return toast('Digite o peso em kg, por exemplo 72,5.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > isoDe(hoje())) return toast('Escolha um dia até hoje.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > isoDe(hoje()) || data < DATA_MIN) return toast('Escolha um dia entre 2015 e hoje.');
     $('#pesoKg').value = '';
     delete S.dica.meuPeso; // o gráfico volta a destacar o registro mais novo
     await salvar(Store.salvarPeso(uid(), data, kg), `Peso de ${dataCurta(data)} registrado`);
@@ -831,13 +834,13 @@ document.addEventListener('submit', async e => {
 
   if (f.id === 'formPerfil') {
     const nome = $('#pnome').value.trim();
-    const meta = parseFloat($('#pmeta').value.replace(',', '.'));
-    let altura = parseFloat($('#paltura').value.replace(',', '.'));
+    const meta = numero($('#pmeta').value);
+    let altura = numero($('#paltura').value);
     if (altura > 0 && altura < 3) altura *= 100; // digitou em metros (1,65)
-    altura = Number.isFinite(altura) ? Math.round(altura) : null;
+    if (altura !== null) altura = Math.round(altura);
     if (!nome) return toast('Digite seu nome.');
-    if (Number.isFinite(meta) && (meta < 30 || meta > 250)) return toast('A meta precisa estar entre 30 e 250 kg.');
-    if (altura !== null && (altura < 100 || altura > 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
+    if (meta !== null && !(meta >= 30 && meta <= 250)) return toast('A meta precisa estar entre 30 e 250 kg.');
+    if (altura !== null && !(altura >= 100 && altura <= 230)) return toast('Digite a altura em centímetros, por exemplo 165.');
     try {
       await Store.salvarPerfil(uid(), { nome: nome.slice(0, 40), metaPeso: Number.isFinite(meta) ? meta : null, alturaCm: altura });
       // Quem acompanha precisa da altura para ver o IMC

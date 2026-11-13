@@ -44,6 +44,16 @@ export const novoId = () => crypto.randomUUID().slice(0, 8);
 export const $ = s => document.querySelector(s);
 export const app = $('#app');
 
+// Lê um número digitado ("72,5", "72.5", "72"). Vazio → null; qualquer outra coisa ("12abc", "1,2,3") → NaN.
+export function numero(txt) {
+  const t = String(txt ?? '').trim();
+  if (!t) return null;
+  return /^(\d+([.,]\d*)?|[.,]\d+)$/.test(t) ? Number(t.replace(',', '.')) : NaN;
+}
+
+// Datas antes disso só podem ser engano de digitação
+export const DATA_MIN = '2015-01-01';
+
 export function toast(texto) {
   const el = $('#toast');
   el.textContent = texto; el.hidden = false;
