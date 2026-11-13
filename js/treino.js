@@ -456,11 +456,13 @@ export function prepararFoto(arquivo) {
 
 // Embaixo do treino de hoje: fazer outro treino da semana, ou justificar o dia (doente, viagem…)
 function opcoesDoDia(d, dia, total, feitos, fezCheckin, motivo) {
-  const outros = [1, 2, 3, 4, 5, 6, 0].filter(k => k !== dia && S.plano[k]?.exercicios?.length);
+  // O treino normal do dia não entra na lista: quando trocado, ele aparece como "Voltar ao de …"
+  const outros = [1, 2, 3, 4, 5, 6, 0].filter(k => k !== dia && k !== d.getDay() && S.plano[k]?.exercicios?.length);
   const trocado = dia !== d.getDay();
   const nomeTreino = k => esc(S.plano[k].titulo || `Treino de ${DIAS_NOME[k].toLowerCase()}`);
   const podeTrocar = (outros.length || trocado) && (!total || feitos < total);
-  const podeJustificar = temTreinoNoDia(S.plano, d) && !feitos && !fezCheckin && !motivo;
+  // Qualquer exercício marcado hoje (mesmo de outro treino) já conta como treino: aí não há o que justificar
+  const podeJustificar = temTreinoNoDia(S.plano, d) && !(S.registros[isoDe(d)]?.feitos?.length) && !fezCheckin && !motivo;
   if (S.opcaoHoje === 'trocar' && podeTrocar) {
     return `<div class="card stack opcoes-dia"><span class="label">Fazer hoje o treino de…</span>
       <div class="chips">${outros.map(k => `<button class="chip" data-trocar-treino="${k}">${DIAS[k]} · ${nomeTreino(k)}</button>`).join('')}
@@ -670,8 +672,8 @@ export function detalheDia(iso) {
     : status === 'just' ? `<div class="card row aviso-just"><span class="grow small">Não conta como falta nem quebra a sequência.</span>
         <button class="link" data-justificar="" data-data="${iso}">Desfazer</button></div>` : '';
   return `<section class="block"><div class="row between"><h2 class="grow">${titulo}</h2>${pill}</div>
-    ${planejado ? `<div class="card stack"><div class="row between"><span class="label">${status === 'future' ? 'Treino planejado' : 'Treino que estava planejado'}</span>
-        ${status === 'future' ? `<button class="link" data-aba="semana" data-dia="${d.getDay()}">Editar</button>` : ''}</div>
+    ${planejado ? `<div class="card stack"><div class="row between"><span class="label">${iso >= isoDe(hoje()) ? 'Treino planejado' : 'Treino que estava planejado'}</span>
+        ${iso >= isoDe(hoje()) ? `<button class="link" data-aba="semana" data-dia="${d.getDay()}">Editar</button>` : ''}</div>
       <h3>${esc(planejado.titulo || 'Treino de ' + DIAS_NOME[d.getDay()].toLowerCase())}</h3>
       ${planejado.exercicios.map(e => `<div class="ex"><div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div></div></div>`).join('')}
     </div>` : ''}
