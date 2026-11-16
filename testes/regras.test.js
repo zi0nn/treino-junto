@@ -262,3 +262,24 @@ describe('Troca de treino, dia justificado e recorde', () => {
     await assertFails(setDoc(reg(CAIO), { justificado: 'doente' }, { merge: true }));
   });
 });
+
+describe('E-mail do perfil e pedido de conexão (revisão de 16/11)', () => {
+  it('ninguém se cadastra com o e-mail de outra pessoa', async () => {
+    const db = banco('nova3', false);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'codigos', 'FIT-RRRR'), { uid: 'nova3' }));
+    await assertFails(setDoc(doc(db, 'users', 'nova3'), { nome: 'Nova', email: 'dona@teste.com', codigo: 'FIT-RRRR', metaPeso: null, criadoEm: new Date() }));
+    await assertSucceeds(setDoc(doc(db, 'users', 'nova3'), { nome: 'Nova', email: 'Nova3@Teste.com', codigo: 'FIT-RRRR', metaPeso: null, criadoEm: new Date() }));
+  });
+  it('a Ana não troca o e-mail guardado no perfil, mas troca o nome', async () => {
+    await assertFails(updateDoc(doc(banco(ANA), 'users', ANA), { email: 'dona@teste.com' }));
+    await assertSucceeds(updateDoc(doc(banco(ANA), 'users', ANA), { nome: 'Ana Paula' }));
+  });
+  it('o pedido de conexão não vem com o nome de quem treina já preenchido', async () => {
+    const pedido = atletaNome => setDoc(doc(banco(CAIO), 'conexoes', `${ANA}_${CAIO}`), {
+      atleta: ANA, viewer: CAIO, codigo: 'FIT-AAAA', atletaNome, viewerNome: 'Caio', status: 'pendente',
+      perm: { treinos: true, checkins: true, peso: false }, criadoEm: serverTimestamp(),
+    });
+    await assertFails(pedido('Nome falso'));
+    await assertSucceeds(pedido(''));
+  });
+});

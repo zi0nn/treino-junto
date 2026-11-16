@@ -181,8 +181,9 @@ function resumoSemanal(pessoas, conexoes) {
       const regs = {};
       semana.forEach(d => { regs[d] = lerDoc('users/' + u.id + '/registros/' + d); });
       // segunda = 1 ... domingo = 0; dias antes de o treino ser montado e dias justificados não contam
-      const planejados = semana.filter((d, i) => {
-        const p = plano[String((i + 1) % 7)];
+      // (o dia da semana sai da própria data: assim o testarResumo também acerta fora do domingo)
+      const planejados = semana.filter(d => {
+        const p = plano[String(new Date(d + 'T12:00:00Z').getUTCDay())];
         return p && p.tem && (!p.desde || d >= p.desde) && !(regs[d] && regs[d].justificado);
       }).length;
       const treinou = {};
@@ -414,7 +415,8 @@ function notificar(uid, titulo, corpo, url, tag) {
       googleApi(FIRESTORE + '/dispositivos/' + encodeURIComponent(token), null, 'delete');
     } else erros.push('FCM ' + r.codigo + ': ' + r.texto);
   });
-  if (erros.length) throw new Error(erros.join(' | '));
+  // Só registra o erro: se um aparelho falhar, as outras pessoas da lista continuam recebendo
+  if (erros.length) console.error('Aviso para ' + uid + ': ' + erros.join(' | '));
   return enviados;
 }
 

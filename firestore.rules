@@ -39,10 +39,15 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if autenticado() && request.auth.uid == uid; // o cadastro confere se o perfil já existe
       // Ao criar, o código precisa estar reservado para esta pessoa
+      // e o e-mail guardado é o do próprio login (ninguém se cadastra com o e-mail de outra pessoa)
       allow create: if autenticado() && request.auth.uid == uid && perfilValido()
+        && request.resource.data.email is string && request.auth.token.email is string
+        && request.resource.data.email.lower() == request.auth.token.email.lower()
         && getAfter(/databases/$(database)/documents/codigos/$(request.resource.data.codigo)).data.uid == uid;
       // O código de conexão nunca muda depois de criado
-      allow update: if eu(uid) && perfilValido() && request.resource.data.codigo == resource.data.codigo;
+      // O e-mail guardado também não muda (o script de avisos usa ele para achar a dona do app)
+      allow update: if eu(uid) && perfilValido() && request.resource.data.codigo == resource.data.codigo
+        && request.resource.data.get('email', null) == resource.data.get('email', null);
       // Apagar a conta (LGPD): a própria pessoa apaga o perfil
       allow delete: if eu(uid);
 
@@ -192,6 +197,7 @@ service cloud.firestore {
         && request.resource.data.atleta != request.auth.uid
         && id == request.resource.data.atleta + '_' + request.auth.uid
         && request.resource.data.status == 'pendente'
+        && request.resource.data.atletaNome == ''   // o nome de quem treina só entra quando ela aceita
         && request.resource.data.viewerNome is string && request.resource.data.viewerNome.size() <= 40
         && permValida(request.resource.data.perm)
         && get(/databases/$(database)/documents/codigos/$(request.resource.data.codigo)).data.uid == request.resource.data.atleta;

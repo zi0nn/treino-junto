@@ -70,12 +70,13 @@ export function cartaoTreino(dia, data, planoSemana = S.plano, registros = S.reg
         <div class="grow"><div class="ex-nome">${esc(e.nome)}</div><div class="small muted tabular">${descricaoEx(e)}</div>
           ${editavel && data === isoDe(hoje()) && !ok ? linhaSugestao(e) : ''}
           ${editavel && data === isoDe(hoje()) ? controlesSerie(e, ok) : ''}</div>
-        ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : registros[data]?.cargas?.[e.id] ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
+        ${editavel ? campoCarga(e, registros[data]?.cargas?.[e.id]?.kg) : Number.isFinite(registros[data]?.cargas?.[e.id]?.kg) ? `<span class="small tabular">${kgBR(registros[data].cargas[e.id].kg)} kg</span>` : ''}</div>`;
     }).join('')}</div></div>`;
 }
 // Carga do plano só com número ("40") ganha o "kg" para não ficar ambígua
 const cargaPlano = c => /^\d+([.,]\d+)?$/.test(String(c).trim()) ? `${String(c).trim()} kg` : c;
-export const descricaoEx = e => [e.series && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(cargaPlano(e.carga)), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
+// (tudo passa por esc ou vira número: o plano de quem eu acompanho vem do banco dela)
+export const descricaoEx = e => [Number.isFinite(e.series) && e.series > 0 && `${e.series} × ${esc(e.reps || '—')}`, e.carga && esc(cargaPlano(e.carga)), `⏱ ${tempoBR(descansoDe(e))}`].filter(Boolean).join(' · ');
 
 // Dica de carga embaixo do exercício (some depois que o exercício é feito)
 export function linhaSugestao(e) {
@@ -383,7 +384,8 @@ export function fotoHtml(dono, c) {
     S.fotos[k] = 'carregando';
     Store.lerFoto(dono, c.id).then(img => { S.fotos[k] = img; render(); }, () => { S.fotos[k] = null; render(); });
   }
-  if (typeof v === 'string' && v.startsWith('data:')) return `<img class="foto" src="${v}" alt="Foto do check-in">`;
+  // A foto vem do banco de outra pessoa: só aceita imagem e escapa o texto (não deixa virar código na tela)
+  if (typeof v === 'string' && v.startsWith('data:image/')) return `<img class="foto" src="${esc(v)}" alt="Foto do check-in">`;
   return `<div class="foto vazia">${v === null ? 'Foto indisponível' : 'Carregando foto…'}</div>`;
 }
 
@@ -517,7 +519,7 @@ export function telaHoje() {
     ${cartaoTreino(dia, isoDe(d))}
     ${opcoesDoDia(d, dia, total, feitos, fezCheckin, motivo)}
   </section>
-  ${Object.keys(S.plano).length ? '' : `<section class="block"><div class="card stack"><h3>Comece montando sua semana</h3>
+  ${Object.values(S.plano).some(p => p?.exercicios?.length) ? '' : `<section class="block"><div class="card stack"><h3>Comece montando sua semana</h3>
     <p class="muted small">Em Semana você monta os exercícios de cada dia, ou escolhe um modelo pronto. Depois é só marcar aqui o que já fez.</p>
     <button class="btn" data-aba="semana">Montar minha semana</button></div></section>`}
   <section class="block">

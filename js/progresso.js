@@ -421,16 +421,21 @@ export function cartaoMetaCasal(c, lado, feitos, nomeOutro) {
 }
 
 // Quando ela bate a meta, marca na conexão e avisa quem acompanha (uma vez por mês)
+// (várias escutas chamam isto quase juntas: "marcando" evita salvar e avisar duas vezes a mesma meta)
+const marcando = new Set();
 export function verificarMetas() {
   if (!S.user || !(S.carregado.registros && S.carregado.checkins)) return;
   const feitos = treinosNoMes(S.registros, S.checkins);
   meusAcompanhantes().forEach(c => {
     const m = c.meta;
     if (!m || m.mes !== mesAtual() || m.batida || feitos < m.treinos) return;
+    const chave = `${c.id}:${m.mes}:${m.treinos}`;
+    if (marcando.has(chave)) return;
+    marcando.add(chave);
     Store.salvarMetaCasal(c.id, { ...m, batida: true }).then(() => {
       toast(`🎉 Meta do mês batida! ${m.recompensa ? 'Recompensa: ' + m.recompensa : ''}`);
       Store.avisar({ evento: 'metaBatida', conexaoId: c.id });
-    }, err => console.warn('Meta do casal', err));
+    }, err => { marcando.delete(chave); console.warn('Meta do casal', err); });
   });
 }
 
