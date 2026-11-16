@@ -34,6 +34,7 @@ function doPost(e) {
     const dados = JSON.parse(e.postData.contents);
     const uid = loginDe(dados.idToken);
     if (!uid) return responder({ ok: false, erro: 'Login inválido' });
+    if (!dentroDoLimite(uid)) return responder({ ok: false, erro: 'Muitos pedidos. Tente mais tarde.' });
 
     if (dados.evento === 'checkin') avisarCheckin(uid, String(dados.checkinId || ''));
     else if (dados.evento === 'reacao') avisarReacao(uid, String(dados.atleta || ''), String(dados.checkinId || ''));
@@ -63,6 +64,33 @@ function loginDe(idToken) {
   return usuario && usuario.emailVerified ? usuario.localId : null; // só contas com e-mail confirmado
 }
 
+// ---------- Contra pedidos repetidos ----------
+// Cada pessoa pode mandar até 40 pedidos por hora (o uso normal fica bem abaixo disso)
+const LIMITE_POR_HORA = 40;
+function dentroDoLimite(uid) {
+  const cache = CacheService.getScriptCache();
+  const chave = 'limite-' + uid + '-' + Utilities.formatDate(new Date(), FUSO, 'yyyyMMddHH');
+  const usados = Number(cache.get(chave) || 0);
+  if (usados >= LIMITE_POR_HORA) return false;
+  cache.put(chave, String(usados + 1), 3600);
+  return true;
+}
+
+// O mesmo aviso (mesmo check-in, mesma conquista...) só sai uma vez.
+// O cache do Google guarda por no máximo 6 horas, que cobre o dia de treino.
+function primeiraVez(chave, segundos) {
+  const trava = LockService.getScriptLock();
+  trava.waitLock(10000); // dois pedidos iguais ao mesmo tempo: um espera o outro
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache.get('aviso-' + chave)) return false;
+    cache.put('aviso-' + chave, '1', segundos || 21600);
+    return true;
+  } finally {
+    trava.releaseLock();
+  }
+}
+
 function responder(objeto) {
   return ContentService.createTextOutput(JSON.stringify(objeto)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -73,6 +101,7 @@ function responder(objeto) {
 function avisarCheckin(atleta, checkinId) {
   const ck = lerDoc('users/' + atleta + '/checkins/' + checkinId);
   if (!ck || ck.data !== hojeISO()) return; // só check-in de verdade, feito hoje
+  if (!primeiraVez('checkin-' + atleta + '-' + checkinId)) return;
   const nome = nomeDe(atleta);
   conexoesDe('atleta', atleta)
     .filter(c => c.status === 'aceita' && c.perm && c.perm.checkins)
@@ -90,6 +119,7 @@ function avisarReacao(viewer, atleta, checkinId) {
   const ck = lerDoc('users/' + atleta + '/checkins/' + checkinId);
   const emoji = ck && ck.reacoes ? ck.reacoes[viewer] : null;
   if (!emoji || REACOES.indexOf(emoji) < 0) return; // a reação precisa estar mesmo salva
+  if (!primeiraVez('reacao-' + checkinId + '-' + viewer + '-' + emoji, 3600)) return;
   if (!querAviso(atleta, 'reacoes')) return;
   notificar(atleta, nomeDe(viewer) + ' reagiu ' + emoji, 'ao seu check-in de ' + (ck.data === hojeISO() ? 'hoje' : dataBR(ck.data)),
     SITE_URL + '#mural', 'reacao-' + checkinId);
@@ -110,6 +140,7 @@ function avisarRecado(remetente, conexaoId, texto) {
 function avisarConquista(atleta, id, nome) {
   const p = lerDoc('users/' + atleta);
   if (!p || !p.conquistas || p.conquistas[id] !== hojeISO()) return;
+  if (!primeiraVez('conquista-' + atleta + '-' + id)) return;
   conexoesDe('atleta', atleta)
     .filter(c => c.status === 'aceita' && c.perm && (c.perm.treinos || c.perm.checkins))
     .forEach(c => {
@@ -125,6 +156,7 @@ function avisarRecorde(atleta, exId) {
   const reg = lerDoc('users/' + atleta + '/registros/' + hojeISO());
   const c = reg && reg.cargas && reg.cargas[exId];
   if (!c || c.recorde !== true || !c.nome) return;
+  if (!primeiraVez('recorde-' + atleta + '-' + hojeISO() + '-' + exId)) return;
   const nome = nomeDe(atleta);
   const kg = String(c.kg).replace('.', ',');
   conexoesDe('atleta', atleta)
@@ -142,6 +174,7 @@ function avisarMetaBatida(atleta, conexaoId) {
   if (!c || c.status !== 'aceita' || c.atleta !== atleta || !c.meta || !c.meta.batida) return;
   const mes = hojeISO().slice(0, 7);
   if (c.meta.mes !== mes || treinosNoMes(atleta, mes) < c.meta.treinos) return;
+  if (!primeiraVez('meta-' + conexaoId + '-' + mes)) return;
   if (!querAviso(c.viewer, 'conquistas')) return;
   notificar(c.viewer, '🎉 ' + nomeDe(atleta) + ' bateu a meta do mês!',
     c.meta.treinos + ' treinos' + (c.meta.recompensa ? '. Recompensa: ' + c.meta.recompensa : '') + '. Hora de cumprir! 😄',
@@ -150,6 +183,7 @@ function avisarMetaBatida(atleta, conexaoId) {
 
 // Sugestão nova → avisa quem mantém o app (a conta dona do script, pelo e-mail dela)
 function avisarSugestao(uid, tipo) {
+  if (!primeiraVez('sugestao-' + uid, 600)) return; // no máximo um aviso a cada 10 minutos por pessoa (a sugestão fica salva do mesmo jeito)
   const dono = listar('users').filter(u => String(u.email).toLowerCase() === Session.getEffectiveUser().getEmail().toLowerCase())[0];
   if (!dono) return;
   notificar(dono.id, (tipo === 'problema' ? '🐞 Problema relatado por ' : '💡 Sugestão de ') + nomeDe(uid),
@@ -244,9 +278,13 @@ function lembreteDiario() {
       const eu = horaDe(u) === horaAgora;
       if (!eu && !viewers.length) return;
 
-      const plano = lerDoc('users/' + u.id + '/plano/' + diaSemana);
-      if (!plano || !(plano.exercicios || []).length) return; // descanso
-      if (treinouHoje(u.id, hoje)) return;
+      // Se trocou o treino do dia no app, vale o treino escolhido (igual ao diaDoTreino do app)
+      const reg = lerDoc('users/' + u.id + '/registros/' + hoje);
+      const temExercicios = p => !!(p && (p.exercicios || []).length);
+      const troca = reg && Number.isInteger(reg.treinoDe) ? lerDoc('users/' + u.id + '/plano/' + reg.treinoDe) : null;
+      const plano = temExercicios(troca) ? troca : lerDoc('users/' + u.id + '/plano/' + diaSemana);
+      if (!temExercicios(plano)) return; // descanso
+      if (treinouHoje(u.id, hoje, reg)) return;
 
       const titulo = plano.titulo || 'treino';
       if (eu && querAviso(u.id, 'meuLembrete', u)) {
@@ -264,8 +302,8 @@ function lembreteDiario() {
 }
 
 // Treinou hoje, ou marcou o dia como justificado (doente, viagem…): nos dois casos, sem lembrete
-function treinouHoje(uid, hoje) {
-  const reg = lerDoc('users/' + uid + '/registros/' + hoje);
+function treinouHoje(uid, hoje, registroJaLido) {
+  const reg = registroJaLido !== undefined ? registroJaLido : lerDoc('users/' + uid + '/registros/' + hoje);
   if (reg && ((reg.feitos || []).length || reg.justificado)) return true;
   return buscar('users/' + uid, 'checkins', 'data', hoje).length > 0;
 }

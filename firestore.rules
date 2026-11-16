@@ -141,7 +141,7 @@ service cloud.firestore {
       allow get: if autenticado();
       allow create: if autenticado() && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
-        && codigo.matches('^FIT-[A-Z0-9]{4}$');
+        && codigo.matches('^FIT-[A-Z0-9]{6}$'); // os antigos, de 4 letras, já existem e continuam valendo
       allow delete: if logado() && resource.data.uid == request.auth.uid; // ao apagar a conta
     }
 

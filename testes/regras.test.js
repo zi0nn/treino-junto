@@ -66,20 +66,26 @@ describe('Login e e-mail confirmado', () => {
   });
   it('conta sem e-mail confirmado consegue criar o próprio perfil (cadastro)', async () => {
     const db = banco(NOVO, false);
-    await assertSucceeds(setDoc(doc(db, 'codigos', 'FIT-NNNN'), { uid: NOVO }));
-    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'codigos', 'FIT-NNNN'), { uid: NOVO }));
-    await assertSucceeds(setDoc(doc(db, 'users', NOVO), perfil('Novo', 'FIT-NNNN')));
+    await assertSucceeds(setDoc(doc(db, 'codigos', 'FIT-NNNNNN'), { uid: NOVO }));
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'codigos', 'FIT-NNNNNN'), { uid: NOVO }));
+    await assertSucceeds(setDoc(doc(db, 'users', NOVO), perfil('Novo', 'FIT-NNNNNN')));
   });
   it('cadastro completo (igual ao app): confere, reserva o código e cria o perfil numa transação', async () => {
     const db = banco('nova2', false);
     await assertSucceeds(runTransaction(db, async tx => {
       const refPerfil = doc(db, 'users', 'nova2');
-      const refCodigo = doc(db, 'codigos', 'FIT-QQQQ');
+      const refCodigo = doc(db, 'codigos', 'FIT-QQQQQQ');
       if ((await tx.get(refPerfil)).exists()) return;
       if ((await tx.get(refCodigo)).exists()) throw new Error('código já existe');
       tx.set(refCodigo, { uid: 'nova2' });
-      tx.set(refPerfil, { nome: 'Nova', email: 'nova2@teste.com', codigo: 'FIT-QQQQ', metaPeso: null, criadoEm: serverTimestamp() });
+      tx.set(refPerfil, { nome: 'Nova', email: 'nova2@teste.com', codigo: 'FIT-QQQQQQ', metaPeso: null, criadoEm: serverTimestamp() });
     }));
+  });
+  it('código novo tem 6 letras: 4 letras ou outro formato não são aceitos', async () => {
+    const db = banco('nova3', false);
+    await assertFails(setDoc(doc(db, 'codigos', 'FIT-ABCD'), { uid: 'nova3' }));
+    await assertFails(setDoc(doc(db, 'codigos', 'FIT-ABCDEFG'), { uid: 'nova3' }));
+    await assertSucceeds(setDoc(doc(db, 'codigos', 'FIT-ABCDEF'), { uid: 'nova3' }));
   });
   it('conta sem e-mail confirmado não usa o resto do app', async () => {
     const db = banco(NOVO, false);

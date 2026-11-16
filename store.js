@@ -141,10 +141,11 @@ export async function criarConta(nome, email, senha) {
 function marcarEnvio() { try { localStorage.setItem('verificacao-enviada', String(Date.now())); } catch { /* ok */ } }
 export function ultimoEnvio() { try { return +localStorage.getItem('verificacao-enviada') || 0; } catch { return 0; } }
 
-// Código de conexão curto (ex.: FIT-4K7Q). Sem letras parecidas (0/O, 1/I).
+// Código de conexão (ex.: FIT-4K7Q2M). Sem letras parecidas (0/O, 1/I). 6 letras = 1 bilhão de combinações
+// (contas antigas continuam com o código de 4 letras que já têm)
 function novoCodigo() {
   const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
   return 'FIT-' + [...bytes].map(b => letras[b % letras.length]).join('');
 }
 
@@ -217,8 +218,11 @@ const erroComCodigo = (code, message) => Object.assign(new Error(message), { cod
 // Quem acompanha digita o código de quem treina e manda um pedido
 export async function pedirConexao(meuUid, meuNome, codigoDigitado) {
   // Aceita "fit-ab12", "FIT AB12" ou só "AB12"
-  const codigo = 'FIT-' + codigoDigitado.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FIT/, '');
-  if (!/^FIT-[A-Z0-9]{4}$/.test(codigo)) throw erroComCodigo('codigo/formato', 'O código tem este formato: FIT-AB12.');
+  // (só tira o "FIT" da frente quando sobram 4 ou 6 letras: um código como FITAB2 continua inteiro)
+  let limpo = codigoDigitado.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (limpo.startsWith('FIT') && (limpo.length === 7 || limpo.length === 9)) limpo = limpo.slice(3);
+  const codigo = 'FIT-' + limpo;
+  if (!/^FIT-([A-Z0-9]{4}|[A-Z0-9]{6})$/.test(codigo)) throw erroComCodigo('codigo/formato', 'O código tem este formato: FIT-AB12CD.');
   const snap = await getDoc(doc(db, 'codigos', codigo));
   if (!snap.exists()) throw erroComCodigo('codigo/nao-existe', 'Não achamos esse código. Confira com a pessoa.');
   const atleta = snap.data().uid;

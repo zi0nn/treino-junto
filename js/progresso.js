@@ -752,7 +752,7 @@ export function telaCargas() { return cabecalho() + secaoCargas(); }
 export function formConectar() {
   return `<form id="formConexao" class="stack">
     <div class="field"><label class="label" for="codigoIn">Código da pessoa</label>
-      <input id="codigoIn" placeholder="FIT-AB12" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="10" required></div>
+      <input id="codigoIn" placeholder="FIT-AB12CD" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="14" required></div>
     <p class="erro" id="conexaoErro" hidden></p>
     <button class="btn" type="submit" id="conexaoBtn">Pedir para acompanhar</button>
   </form>`;
