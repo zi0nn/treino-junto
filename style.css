@@ -368,3 +368,7 @@ label.btn { display: flex; align-items: center; justify-content: center; cursor:
 .ficha-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .ficha-dias .chip { padding: 8px 0; text-align: center; }
 .ficha-dias .chip.outro { border-style: dashed; color: var(--muted); }
+.dicas { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.dica { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.dica-icone { font-size: 20px; line-height: 1.3; text-align: center; }
+.dica p { margin: 2px 0 0; }

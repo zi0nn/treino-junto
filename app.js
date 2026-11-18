@@ -32,7 +32,14 @@ export function telaBoasVindas() {
   mostrarNav(false);
   const passo = S.bv?.passo || 1;
   const p = S.perfil || {};
-  const barra = `<div class="passos" aria-label="Passo ${passo} de 3">${[1, 2, 3].map(n => `<i class="${n <= passo ? 'on' : ''}"></i>`).join('')}</div>`;
+  const barra = `<div class="passos" aria-label="Passo ${passo} de 4">${[1, 2, 3, 4].map(n => `<i class="${n <= passo ? 'on' : ''}"></i>`).join('')}</div>`;
+  // Ficha mandada no passo 2: a leitura segue enquanto a pessoa termina os passos
+  const f = S.ficha;
+  const fichaCartao = !f ? '' : `<div class="card stack ${f.estado === 'erro' ? '' : 'aviso'}" role="status" aria-live="polite">
+      ${f.estado === 'lendo' ? `<b>📷 ${esc(f.etapa)}${f.pct ? ` ${f.pct}%` : ''}</b><div class="barra"><span style="width:${f.pct || 3}%"></span></div>
+        <p class="small muted">Pode seguir: no fim você confere os treinos antes de salvar.</p>`
+      : f.estado === 'revisar' ? `<b>📷 Ficha lida: ${f.treinos.length} ${f.treinos.length === 1 ? 'treino' : 'treinos'}</b><p class="small muted">No fim você confere e escolhe os dias.</p>`
+      : `<b>Não deu para ler a ficha</b><p class="small muted">${esc(f.erro)} Dá para tentar de novo em Treino › Semana.</p>`}</div>`;
   let corpo;
   if (passo === 1) {
     corpo = `<h1>Bem-vinda(o), ${esc((p.nome || '').split(' ')[0])}! 👋</h1>
@@ -48,27 +55,48 @@ export function telaBoasVindas() {
       </form>`;
   } else if (passo === 2) {
     const sel = S.bv.modelo ?? 'sozinho';
-    corpo = `${pontoDePartida(p)}<h1>Como quer treinar?</h1>
-      <p class="muted">Escolha um modelo para começar. Dá para editar qualquer exercício depois, em Treino › Semana.</p>
+    const opcao = (id, titulo, desc) => `<button class="card modelo-opcao ${sel === id ? 'on' : ''}" data-bv-modelo="${id}" aria-pressed="${sel === id}">
+          <h3>${titulo}</h3><p class="small muted">${desc}</p></button>`;
+    corpo = `${pontoDePartida(p)}<h1>Como quer montar sua semana?</h1>
+      <p class="muted">Dá para editar qualquer exercício depois, em Treino › Semana.</p>
       <div class="stack">
-        ${MODELOS.map(m => `<button class="card modelo-opcao ${sel === m.id ? 'on' : ''}" data-bv-modelo="${m.id}" aria-pressed="${sel === m.id}">
-          <h3>${esc(m.nome)}</h3><p class="small muted">${esc(m.desc)}</p></button>`).join('')}
-        <button class="card modelo-opcao ${sel === 'sozinho' ? 'on' : ''}" data-bv-modelo="sozinho" aria-pressed="${sel === 'sozinho'}">
-          <h3>Vou montar sozinha(o)</h3><p class="small muted">Já tenho uma ficha da academia e vou passar para o app.</p></button>
-        <button class="btn" data-acao="bv-2">Continuar</button>
+        ${opcao('foto', '📷 Ler minha ficha pela foto', 'Tem a ficha da academia? Tire uma foto ou escolha um print: o app monta os treinos sozinho e você confere no fim. A foto não sai do seu celular.')}
+        <span class="label">Ou um modelo pronto</span>
+        ${MODELOS.map(m => opcao(m.id, esc(m.nome), esc(m.desc))).join('')}
+        ${opcao('sozinho', 'Vou montar sozinha(o)', 'Digito os exercícios eu mesma(o), dia por dia.')}
+        ${sel === 'foto'
+          ? `<label class="btn" for="bvFichaIn">📷 Escolher a foto da ficha</label><input id="bvFichaIn" type="file" accept="image/*" hidden>
+             <button class="link" data-bv-modelo="sozinho">Agora não: vou montar sozinha(o)</button>`
+          : '<button class="btn" data-acao="bv-2">Continuar</button>'}
       </div>`;
-  } else {
+  } else if (passo === 3) {
     const e = estadoAvisos();
     corpo = `<h1>Treine junto 🤝</h1>
       <p class="muted">O app fica melhor com alguém do lado: a pessoa vê seus check-ins, reage e manda força. Você escolhe o que ela pode ver.</p>
       <div class="card stack"><span class="label">Seu código</span><div class="code">${esc(p.codigo || '—')}</div>
         <p class="small muted">Passe esse código para quem vai te incentivar. Ou, se você quer acompanhar alguém, peça o código dessa pessoa e digite em Perfil › Conexões.</p>
         <button class="btn sm ghost" data-acao="copiar">Copiar código</button></div>
-      ${e.pode && !e.ativo ? '<button class="btn ghost" data-acao="ativar-avisos">🔔 Ativar avisos no celular</button>' : ''}
-      <button class="btn" data-acao="bv-fim">Começar a treinar</button>`;
+      ${e.pode && !e.ativo ? `<div class="card stack"><b>🔔 Avisos no celular</b><p class="small muted">${esc(e.texto || 'Lembrete na hora de treinar, check-in e reações de quem você acompanha.')}</p>
+        <button class="btn sm ghost" data-acao="ativar-avisos">Ativar avisos</button></div>` : e.ativo ? '<p class="small">🔔 Avisos ligados neste aparelho.</p>' : ''}
+      ${fichaCartao}
+      <button class="btn" data-acao="bv-3">Continuar</button>`;
+  } else {
+    const dica = (icone, titulo, texto) => `<li class="dica"><span class="dica-icone" aria-hidden="true">${icone}</span><div><b>${titulo}</b><p class="small muted">${texto}</p></div></li>`;
+    corpo = `<h1>O que dá para fazer 💪</h1>
+      <p class="muted">Um resumo rápido. Quase tudo fica em Treino › Hoje.</p>
+      <ul class="card dicas">
+        ${dica('📍', 'Check-in', 'Chegou na academia? Toque em "Cheguei na academia", com foto se quiser. Quem te acompanha recebe um aviso e reage.')}
+        ${dica('✅', 'Marque o treino', 'Toque no círculo de cada exercício, ou em "Série 1/3" para contar as séries. O descanso começa sozinho e o celular vibra no fim.')}
+        ${dica('▶️', 'Modo treino', 'Um exercício por vez em tela cheia, com botões grandes: o jeito mais prático na academia.')}
+        ${dica('🏆', 'Carga e recorde', 'Anote o peso que usou. O app lembra a última vez, sugere quando subir e avisa quando você bate um recorde.')}
+        ${dica('🔁', 'Dia diferente', '"Fazer outro treino hoje" troca pelo treino de outro dia. "Hoje não vou treinar" (doente, viagem, feriado) não conta como falta.')}
+        ${dica('📊', 'Corpo e Evolução', 'Nas abas Corpo e Evolução: peso, IMC, medidas e fotos de antes e depois (só você vê), conquistas, frequência e o resumo de cada mês.')}
+      </ul>
+      ${fichaCartao}
+      <button class="btn" data-acao="bv-fim">${f && f.estado !== 'erro' ? 'Conferir minha ficha' : 'Começar a treinar'}</button>`;
   }
   app.innerHTML = `<div class="stack boas-vindas">${barra}${corpo}
-    ${passo < 3 ? '<button class="link" data-acao="bv-pular">Pular e ir direto para o app</button>' : ''}</div>`;
+    ${passo < 4 ? '<button class="link" data-acao="bv-pular">Pular e ir direto para o app</button>' : ''}</div>`;
 }
 
 export // Resultado do passo 1: IMC e faixa saudável com o peso e a altura que a pessoa acabou de informar
@@ -106,7 +134,8 @@ async function baixarMeusDados() {
 async function concluirBoasVindas() {
   try { await Store.salvarPerfil(uid(), { boasVindas: isoDe(hoje()) }); } catch (err) { toast(mensagemErro(err)); return; }
   S.bv = null;
-  irPara('hoje');
+  // Mandou a ficha no passo 2: abre a revisão (em Treino › Semana) para conferir e salvar
+  irPara(S.ficha ? 'semana' : 'hoje');
 }
 
 // Conta criada, mas o e-mail ainda não foi confirmado
@@ -543,6 +572,7 @@ document.addEventListener('click', e => {
     if (m) usarModelo(m); else render();
     return;
   }
+  if (acao === 'bv-3') { S.bv = { ...S.bv, passo: 4 }; render(); window.scrollTo(0, 0); return; }
   if (acao === 'modo-treino') { entrarModoTreino(); return; }
   if (acao === 'sair-modo') { sairModoTreino(); return; }
   if (acao === 'baixar-dados') { baixarMeusDados(); return; }
@@ -625,6 +655,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'fichaIn' && t.files?.[0]) { lerFicha(t.files[0]); t.value = ''; return; }
+  // Boas-vindas: a ficha é lida enquanto a pessoa segue para os próximos passos
+  if (t.id === 'bvFichaIn' && t.files?.[0]) { S.bv = { ...S.bv, passo: 3 }; lerFicha(t.files[0]); t.value = ''; window.scrollTo(0, 0); return; }
   if (t.dataset.fichaCampo) { if (editarCampo(t)) render(); return; }
   if (t.id === 'fotoIn' && t.files?.[0]) {
     S.checkin.processando = true; S.checkin.foto = null; render();
