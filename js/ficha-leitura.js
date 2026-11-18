@@ -214,6 +214,7 @@ function interpretarLinha(texto, tabela) {
   const nome = resto.replace(/[^\p{L}\p{N}+°ºª().,/ -]/gu, ' ').replace(/\s+/g, ' ').replace(/^[\s.,-]+|[\s.,-]+$/g, '');
   if (!LETRAS.test(nome)) return null;
   if (!tabela && !series && !reps) return null; // fora de tabela, só linha com séries ou tempo vira exercício
+  if (series > 10) duvida = true; // mais de 10 séries quase sempre é número lido errado: fica em amarelo
   return {
     nome: (nome.charAt(0).toUpperCase() + nome.slice(1)).slice(0, 60),
     series: Math.min(20, Math.max(1, series || 1)),
