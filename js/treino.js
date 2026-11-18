@@ -4,6 +4,7 @@
 import * as Store from '../store.js';
 import { render, salvar, uid } from '../app.js';
 import { $, ABAS, DIAS, DIAS_NOME, MOTIVOS, S, SUGESTOES, app, diaDoTreino, esc, hoje, isoDe, justificado, meuUid, mostrarNav, nomeDe, pad, pedidosRecebidos, resumoSemana, semanaAtual, statusDia, subnav, temTreinoNoDia, toast } from './base.js';
+import { botaoFicha, telaFicha } from './ficha.js';
 import { convitAvisos, permissao } from './perfil.js';
 import { campoCarga, convitResumoMes, diaDe, duracaoEx, kgBR, porTempo, sequencias, sugestaoCarga } from './progresso.js';
 
@@ -540,6 +541,7 @@ export function legenda() {
 }
 
 export function telaSemana() {
+  if (S.ficha) return cabecalho() + telaFicha(); // conferindo a ficha lida pela foto
   const semana = semanaAtual();
   const dia = S.diaSel;
   const plano = S.plano[dia] || { titulo: '', exercicios: [] };
@@ -577,6 +579,7 @@ export function telaSemana() {
     ${plano.exercicios.length ? `<div class="row"><span class="small muted grow">Copiar este treino para outro dia:</span>
       <select id="copiarPara" class="input" style="width:auto"><option value="">Escolher dia</option>${[1, 2, 3, 4, 5, 6, 0].filter(x => x !== dia).map(x => `<option value="${x}">${DIAS_NOME[x]}</option>`).join('')}</select></div>` : ''}
   </section>
+  ${botaoFicha()}
   ${secaoModelos()}`;
 }
 

@@ -8,6 +8,7 @@
    ========================================================= */
 import * as Store from './store.js';
 import { $, DATA_MIN, DIAS_NOME, MOTIVOS, diaDoTreino, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, numero, pad, quemAcompanho, toast } from './js/base.js';
+import { editarCampo, lerFicha, removerExercicio, salvarFicha } from './js/ficha.js';
 import { TELAS } from './js/juntos.js';
 import { ativarAvisos, escolherTema, estadoAvisos, permissao, temaAtual } from './js/perfil.js';
 import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, recordeAntes, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
@@ -448,6 +449,9 @@ document.addEventListener('click', e => {
   if (b.dataset.editarEx) { S.editandoEx = b.dataset.editarEx; render(); document.getElementById('edNome')?.focus(); return; }
   if (b.dataset.cancelarEx !== undefined) { S.editandoEx = null; render(); return; }
   if (b.dataset.verModelos !== undefined) { S.verModelos = !S.verModelos; render(); return; }
+  if (b.dataset.ficha === 'cancelar') { S.ficha = null; render(); return; }
+  if (b.dataset.ficha === 'salvar') { salvarFicha(b); return; }
+  if (b.dataset.fichaRemover) { removerExercicio(b.dataset.fichaRemover); return; }
   if (b.dataset.usarModelo) {
     const chave = 'modelo:' + b.dataset.usarModelo;
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
@@ -612,8 +616,15 @@ export async function enviarCheckin() {
 
 export function mostrarErroLogin(texto) { const el = $('#loginErro'); if (el) { el.textContent = texto; el.hidden = false; } }
 
+// Campos da revisão da ficha: guardam o que foi digitado sem redesenhar a tela
+document.addEventListener('input', e => {
+  if (e.target.dataset?.fichaCampo && e.target.tagName === 'INPUT') editarCampo(e.target);
+});
+
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'fichaIn' && t.files?.[0]) { lerFicha(t.files[0]); t.value = ''; return; }
+  if (t.dataset.fichaCampo) { if (editarCampo(t)) render(); return; }
   if (t.id === 'fotoIn' && t.files?.[0]) {
     S.checkin.processando = true; S.checkin.foto = null; render();
     prepararFoto(t.files[0]).then(foto => { S.checkin.foto = foto; }, err => toast(err.message))

@@ -355,3 +355,13 @@ nav.tabs button.on { color: var(--accent); }
 body:has(#nav[hidden]) .timer { bottom: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 body:has(#nav[hidden]) .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 body:has(#nav[hidden]):has(#timer:not([hidden])) .toast { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+
+/* Ler ficha pela foto */
+label.btn { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; }
+.ficha-ex { display: grid; grid-template-columns: minmax(0, 1fr) 52px 70px 32px; gap: 6px; align-items: center; }
+.ficha-ex input { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px; width: 100%; min-width: 0; font-size: 14px; }
+.ficha-ex.duvida input { border-color: var(--warn); background: var(--warn-soft); }
+.ficha-cab { font-size: 12px; }
+.barra { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.barra span { display: block; height: 100%; background: var(--accent); transition: width .3s; }

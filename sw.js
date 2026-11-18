@@ -6,7 +6,7 @@
    Os dados quem guarda é o próprio Firebase, no aparelho.
    Ao publicar uma versão nova, aumente o número em CACHE. */
 
-const CACHE = 'treino-junto-v29';
+const CACHE = 'treino-junto-v30';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/10.12.2';
 const FILES = [
   './',
@@ -20,6 +20,7 @@ const FILES = [
   './js/perfil.js',
   './js/progresso.js',
   './js/juntos.js',
+  './js/ficha.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
@@ -30,7 +31,8 @@ const FILES = [
   `${FIREBASE}/firebase-app-check.js`,
   './privacidade.html',
 ];
-const EXTERNOS = [FIREBASE, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
+// O leitor de fichas (versão fixa) também fica guardado depois do primeiro uso
+const EXTERNOS = [FIREBASE, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/', 'https://cdn.jsdelivr.net/npm/tesseract.js-core@'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)));
