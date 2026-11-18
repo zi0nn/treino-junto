@@ -4,7 +4,7 @@
    treinos e exercícios, e a pessoa confere tudo antes de salvar no plano. */
 import * as Store from '../store.js';
 import { planoDoDia, render, uid } from '../app.js';
-import { DIAS_NOME, S, esc, mensagemErro, novoId, toast } from './base.js';
+import { DIAS, DIAS_NOME, S, esc, mensagemErro, novoId, toast } from './base.js';
 import { interpretarFicha, limparImagem } from './ficha-leitura.js';
 
 // Versões fixas: o leitor só é baixado quando a pessoa usa (cerca de 4 MB na primeira vez, depois fica guardado)
@@ -79,7 +79,7 @@ export async function lerFicha(arquivo) {
     } else {
       // Dia escrito na própria ficha ("Treino A - Segunda") tem prioridade
       const dias = treinos.every(t => t.diaFicha !== undefined) ? treinos.map(t => t.diaFicha) : diasPadrao(treinos.length);
-      S.ficha = { estado: 'revisar', treinos: treinos.map((t, i) => ({ ...t, dia: dias[i] ?? '' })) };
+      S.ficha = { estado: 'revisar', treinos: treinos.map((t, i) => ({ ...t, dias: dias[i] !== undefined ? [dias[i]] : [] })) };
     }
   } catch (err) {
     console.error(err);
@@ -122,27 +122,31 @@ export function telaFicha() {
         <label class="btn" for="fichaIn">Tentar outra foto</label></div>
       <input id="fichaIn" type="file" accept="image/*" hidden></div></section>`;
   }
-  const opcoesDia = sel => `<option value="" ${sel === '' ? 'selected' : ''}>Não usar</option>`
-    + [1, 2, 3, 4, 5, 6, 0].map(d => `<option value="${d}" ${sel === d ? 'selected' : ''}>${DIAS_NOME[d]}</option>`).join('');
-  const usados = f.treinos.map(t => t.dia).filter(d => d !== '');
   const duvidas = f.treinos.reduce((n, t) => n + t.exercicios.filter(e => e.duvida).length, 0);
+  const lista = nomes => nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes.at(-1)}` : nomes[0];
   return `<section class="block">
     <div class="row between"><h2>Confira a ficha</h2><button class="link" data-ficha="cancelar">Cancelar</button></div>
-    <p class="small muted">Achei ${f.treinos.length} ${f.treinos.length === 1 ? 'treino' : 'treinos'}. A leitura pode errar alguma letra: corrija o que precisar, escolha o dia de cada treino e salve.
+    <p class="small muted">Achei ${f.treinos.length} ${f.treinos.length === 1 ? 'treino' : 'treinos'}. A leitura pode errar alguma letra: corrija o que precisar, escolha os dias de cada treino (pode ser mais de um) e salve.
       ${duvidas ? `<b>${duvidas} ${duvidas === 1 ? 'campo marcado' : 'campos marcados'} em amarelo</b> não ${duvidas === 1 ? 'ficou legível' : 'ficaram legíveis'}: confira.` : ''}</p>
   </section>
   ${f.treinos.map((t, i) => {
-    const existente = t.dia !== '' ? S.plano[t.dia] : null;
-    const repetido = t.dia !== '' && usados.filter(d => d === t.dia).length > 1;
+    // Dias deste treino que hoje já têm outro treino no plano (vão ser substituídos)
+    const substitui = [1, 2, 3, 4, 5, 6, 0].filter(d => t.dias.includes(d) && S.plano[d]?.exercicios?.length)
+      .map(d => `${DIAS_NOME[d].toLowerCase()} (${esc(S.plano[d].titulo || `${S.plano[d].exercicios.length} exercícios`)})`);
     return `<section class="block"><div class="card stack ficha-treino">
-      <div class="grid2">
-        <div class="field"><label class="label" for="fichaTit${i}">Nome do treino</label>
-          <input id="fichaTit${i}" maxlength="60" value="${esc(t.titulo)}" data-ficha-campo="titulo" data-t="${i}"></div>
-        <div class="field"><label class="label" for="fichaDia${i}">Dia</label>
-          <select id="fichaDia${i}" class="input" data-ficha-campo="dia" data-t="${i}">${opcoesDia(t.dia)}</select></div>
-      </div>
-      ${repetido ? '<p class="small erro">Outro treino da ficha já está neste dia. Escolha um dia diferente.</p>'
-        : existente?.exercicios?.length ? `<p class="small muted">Vai substituir o treino de ${DIAS_NOME[t.dia].toLowerCase()} (${esc(existente.titulo || `${existente.exercicios.length} exercícios`)}).</p>` : ''}
+      <div class="field"><label class="label" for="fichaTit${i}">Nome do treino</label>
+        <input id="fichaTit${i}" maxlength="60" value="${esc(t.titulo)}" data-ficha-campo="titulo" data-t="${i}"></div>
+      <div class="field"><span class="label" id="fichaDiasRot${i}">Dias</span>
+        <div class="ficha-dias" role="group" aria-labelledby="fichaDiasRot${i}">
+          ${[1, 2, 3, 4, 5, 6, 0].map(d => {
+            const on = t.dias.includes(d);
+            const outro = !on && f.treinos.find((x, k) => k !== i && x.dias.includes(d));
+            return `<button class="chip ${on ? 'on' : ''} ${outro ? 'outro' : ''}" data-ficha-dia="${i}:${d}" aria-pressed="${on}"
+              aria-label="${DIAS_NOME[d]}${outro ? ` (hoje no ${esc(outro.titulo)})` : ''}">${DIAS[d]}</button>`;
+          }).join('')}
+        </div></div>
+      <p class="small muted">${t.dias.length ? `${t.dias.length === 1 ? 'Dia escolhido' : `${t.dias.length} dias escolhidos`}.` : '<b>Nenhum dia escolhido:</b> este treino não será salvo.'}
+        ${substitui.length ? ` Vai substituir o treino de ${lista(substitui)}.` : ''}</p>
       <div class="ficha-ex ficha-cab small muted" aria-hidden="true"><span>Exercício</span><span>Séries</span><span>Reps</span><span></span></div>
       ${t.exercicios.map((e, j) => `<div class="ficha-ex ${e.duvida ? 'duvida' : ''}">
         <input aria-label="Exercício ${j + 1}" maxlength="60" value="${esc(e.nome)}" data-ficha-campo="nome" data-t="${i}" data-e="${j}">
@@ -163,7 +167,6 @@ export function editarCampo(el) {
   if (!t) return false;
   const campo = el.dataset.fichaCampo;
   if (campo === 'titulo') t.titulo = el.value;
-  else if (campo === 'dia') { t.dia = el.value === '' ? '' : +el.value; return true; } // redesenha (aviso de dia)
   else {
     const e = t.exercicios[+el.dataset.e];
     if (!e) return false;
@@ -173,6 +176,20 @@ export function editarCampo(el) {
   return false;
 }
 
+// Liga/desliga um dia para o treino. Cada dia fica com um treino só:
+// escolher um dia que estava em outro treino da ficha passa ele para este.
+export function alternarDia(chave) {
+  const [i, d] = chave.split(':').map(Number);
+  const t = S.ficha?.treinos?.[i];
+  if (!t) return;
+  if (t.dias.includes(d)) t.dias = t.dias.filter(x => x !== d);
+  else {
+    S.ficha.treinos.forEach(x => { x.dias = x.dias.filter(y => y !== d); });
+    t.dias.push(d);
+  }
+  render();
+}
+
 export function removerExercicio(chave) {
   const [i, j] = chave.split(':').map(Number);
   S.ficha?.treinos?.[i]?.exercicios.splice(j, 1);
@@ -180,24 +197,26 @@ export function removerExercicio(chave) {
 }
 
 export async function salvarFicha(botao) {
-  const escolhidos = S.ficha.treinos.filter(t => t.dia !== '' && t.exercicios.some(e => e.nome.trim()));
+  const escolhidos = S.ficha.treinos.filter(t => t.dias.length && t.exercicios.some(e => e.nome.trim()));
   if (!escolhidos.length) return toast('Escolha o dia de pelo menos um treino.');
-  const dias = escolhidos.map(t => t.dia);
-  if (new Set(dias).size !== dias.length) return toast('Dois treinos estão no mesmo dia. Escolha dias diferentes.');
+  // Um documento por dia (cada dia ganha os exercícios com ids próprios, como no "copiar para outro dia")
+  const gravacoes = escolhidos.flatMap(t => t.dias.map(d => ({ t, d })));
+  if (new Set(gravacoes.map(g => g.d)).size !== gravacoes.length) return toast('Dois treinos estão no mesmo dia. Escolha dias diferentes.');
   botao.disabled = true; botao.textContent = 'Salvando…';
   try {
-    await Promise.all(escolhidos.map(t => Store.salvarDia(uid(), t.dia, {
+    await Promise.all(gravacoes.map(({ t, d }) => Store.salvarDia(uid(), d, {
       titulo: t.titulo.trim().slice(0, 60),
       exercicios: t.exercicios.filter(e => e.nome.trim()).slice(0, 40).map(e => ({
         id: novoId(), nome: e.nome.trim().slice(0, 60),
         series: Math.min(20, Math.max(1, parseInt(e.series, 10) || 1)),
         reps: String(e.reps || '').trim().slice(0, 12), carga: '', descanso: 60,
       })),
-      desde: planoDoDia(t.dia).desde,
+      desde: planoDoDia(d).desde,
     })));
     S.ficha = null;
-    S.diaSel = escolhidos[0].dia;
-    toast(`Ficha salva: ${escolhidos.length} ${escolhidos.length === 1 ? 'treino' : 'treinos'} no seu plano 💪`);
+    S.diaSel = [1, 2, 3, 4, 5, 6, 0].find(d => gravacoes.some(g => g.d === d));
+    const nDias = gravacoes.length;
+    toast(`Ficha salva: ${escolhidos.length} ${escolhidos.length === 1 ? 'treino' : 'treinos'} em ${nDias} ${nDias === 1 ? 'dia' : 'dias'} 💪`);
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);

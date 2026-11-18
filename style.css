@@ -365,3 +365,6 @@ label.btn { display: flex; align-items: center; justify-content: center; cursor:
 .ficha-cab { font-size: 12px; }
 .barra { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
 .barra span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.ficha-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.ficha-dias .chip { padding: 8px 0; text-align: center; }
+.ficha-dias .chip.outro { border-style: dashed; color: var(--muted); }

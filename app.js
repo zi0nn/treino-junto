@@ -8,7 +8,7 @@
    ========================================================= */
 import * as Store from './store.js';
 import { $, DATA_MIN, DIAS_NOME, MOTIVOS, diaDoTreino, ROTAS, S, app, esc, hoje, isoDe, mensagemErro, meusAcompanhantes, mostrarNav, novoId, numero, pad, quemAcompanho, toast } from './js/base.js';
-import { editarCampo, lerFicha, removerExercicio, salvarFicha } from './js/ficha.js';
+import { alternarDia, editarCampo, lerFicha, removerExercicio, salvarFicha } from './js/ficha.js';
 import { TELAS } from './js/juntos.js';
 import { ativarAvisos, escolherTema, estadoAvisos, permissao, temaAtual } from './js/perfil.js';
 import { MEDIDAS, alturaBR, calcImc, dataCurta, faixaImc, faixaSaudavel, kgBR, mesAtual, recordeAntes, treinosNoMes, verificarConquistas, verificarMetas } from './js/progresso.js';
@@ -452,6 +452,7 @@ document.addEventListener('click', e => {
   if (b.dataset.ficha === 'cancelar') { S.ficha = null; render(); return; }
   if (b.dataset.ficha === 'salvar') { salvarFicha(b); return; }
   if (b.dataset.fichaRemover) { removerExercicio(b.dataset.fichaRemover); return; }
+  if (b.dataset.fichaDia) { alternarDia(b.dataset.fichaDia); return; }
   if (b.dataset.usarModelo) {
     const chave = 'modelo:' + b.dataset.usarModelo;
     if (S.confirmar !== chave) { S.confirmar = chave; render(); return; }
