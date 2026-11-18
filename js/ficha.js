@@ -5,6 +5,7 @@
 import * as Store from '../store.js';
 import { planoDoDia, render, uid } from '../app.js';
 import { DIAS_NOME, S, esc, mensagemErro, novoId, toast } from './base.js';
+import { interpretarFicha, limparImagem } from './ficha-leitura.js';
 
 // Versões fixas: o leitor só é baixado quando a pessoa usa (cerca de 4 MB na primeira vez, depois fica guardado)
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
@@ -24,7 +25,7 @@ function carregarLeitor() {
   return carregando;
 }
 
-// Amplia letras pequenas e passa para tons de cinza (assim o leitor erra bem menos).
+// Amplia letras pequenas e limpa a foto (cor, sombra, inclinação): assim o leitor erra bem menos.
 // O iPhone não desenha imagens com mais de ~16 milhões de pontos: fica abaixo disso.
 function prepararImagem(arquivo) {
   return new Promise((resolve, reject) => {
@@ -41,8 +42,9 @@ function prepararImagem(arquivo) {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, c.width, c.height);
       const px = ctx.getImageData(0, 0, c.width, c.height);
+      const { pixels } = limparImagem(px.data, c.width, c.height);
       const d = px.data;
-      for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      for (let i = 0, j = 0; i < pixels.length; i++, j += 4) { d[j] = d[j + 1] = d[j + 2] = pixels[i]; d[j + 3] = 255; }
       ctx.putImageData(px, 0, 0);
       resolve(c);
     };
@@ -86,105 +88,6 @@ export async function lerFicha(arquivo) {
     worker?.terminate();
     render();
   }
-}
-
-// ---------- Do texto lido para treinos ----------
-// Funciona com fichas em tabela numerada (Nº | exercício | série | repetição) e também
-// com linhas soltas como "Supino reto 3x12". Exportada para dar para testar sem foto.
-const LETRAS = /[A-Za-zÀ-ÿ]{3,}/;
-export function interpretarFicha(linhas) {
-  const limpas = linhas.map(l => l.replace(/[|[\]{}_=“”"'´`~—–]+/g, ' ').replace(/\s+/g, ' ').trim()
-    .replace(/(\d)\s+[Il!]\s+(?=\d)/g, '$1 ')) // a borda da tabela às vezes vira um "I" entre os números
-    .filter(Boolean);
-  // Cabeçalho: "TREINO A", "Nº | SÉRIE | REPETIÇÃO" (sem números) ou só o nome do dia ("Segunda")
-  // (a linha de cabeçalho não tem "3 12" nem "3x12": isso seria um exercício como "Agachamento 4 séries de 10")
-  const cabecalho = l => /TREINO/i.test(l)
-    || (/S[ÉE]RI|REPETI/i.test(l) && !/\d\s*[xX×]?\s*\d/.test(l) && !/s[ée]ries?\s+de/i.test(l))
-    || (diaEscrito(l) !== null && l.split(' ').length <= 2);
-  // Linha da tabela: começa pelo número da linha (1 a 30); linha vazia da tabela tem só o número
-  const numerada = l => l.match(/^\W{0,2}(\d{1,2})[).:]?(?:\s+(.*))?$/);
-  const tabela = limpas.filter(l => { const m = numerada(l); return m && +m[1] <= 30 && LETRAS.test(m[2] || ''); }).length >= 3;
-  let ultimoNum = 0;
-
-  const treinos = [];
-  let atual = null;
-  const novo = letra => {
-    atual = { letra: letra || String.fromCharCode(65 + treinos.length), exercicios: [] };
-    treinos.push(atual);
-  };
-  for (const l of limpas) {
-    if (cabecalho(l)) {
-      // "TREINO A", "TREINOB": a letra vem junto; cabeçalho sem letra (só "Série | Repetição") também separa
-      const letra = l.match(/TREINO\s*([A-Z])(?![a-z])/i)?.[1]?.toUpperCase();
-      const dia = diaEscrito(l);
-      if (!atual || atual.exercicios.length) novo(letra);
-      else if (letra) atual.letra = letra;
-      if (dia !== null) atual.diaFicha = dia;
-      continue;
-    }
-    let resto = l;
-    if (tabela) {
-      const m = numerada(l);
-      if (!m || +m[1] > 30) continue; // título da academia, nome da pessoa etc.
-      // Numeração voltou ao 1 sem cabeçalho legível: começou outro treino.
-      // (depois do 10 não conta: o leitor às vezes lê "11" como "1")
-      const n = +m[1];
-      const recomecou = n === 1 && ultimoNum >= 2 && ultimoNum !== 10 && atual?.exercicios.length;
-      ultimoNum = n;
-      if (recomecou) novo();
-      resto = m[2] || '';
-    }
-    const ex = interpretarLinha(resto, tabela);
-    if (!ex) continue;
-    if (!atual) novo();
-    atual.exercicios.push(ex);
-  }
-  // Repetição que não deu para ler (ex.: "3 *"): usa a mais comum da ficha e marca para conferir
-  const contagem = {};
-  treinos.forEach(t => t.exercicios.forEach(e => { if (e.reps && !e.duvida) contagem[e.reps] = (contagem[e.reps] || 0) + 1; }));
-  const comum = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0] || '12';
-  treinos.forEach(t => t.exercicios.forEach(e => { if (e.duvida && !e.reps) e.reps = comum; }));
-  treinos.forEach(t => { t.titulo = `Treino ${t.letra}`; delete t.letra; });
-  return treinos;
-}
-
-// "Segunda", "terça-feira", "SÁBADO" → número do dia (0 = domingo); null se não tiver dia escrito
-const NOMES_DIAS = [/domingo/i, /segunda/i, /ter[çc]a/i, /quarta/i, /quinta/i, /sexta/i, /s[áa]bado/i];
-function diaEscrito(l) {
-  const i = NOMES_DIAS.findIndex(r => r.test(l));
-  return i < 0 ? null : i;
-}
-
-function interpretarLinha(texto, tabela) {
-  let resto = ` ${texto} `;
-  let reps = '', series = null, duvida = false;
-  // Tempo: "30min", "30 mim", "45s", "1h", com as séries antes ou não ("3x30s")
-  const tempo = resto.match(/\s(?:(\d{1,2})\s*[xX×]\s*)?(\d{1,3})\s*(min|mim|mn|minutos?|s|seg|segundos?|h|horas?)(?!\p{L})/iu);
-  if (tempo) {
-    const unidade = /^m/i.test(tempo[3]) ? 'min' : /^h/i.test(tempo[3]) ? 'h' : 's';
-    reps = `${tempo[2]} ${unidade}`;
-    if (tempo[1]) series = +tempo[1];
-    resto = resto.replace(tempo[0], ' ');
-  }
-  resto = resto.trim();
-  let m;
-  if ((m = resto.match(/^(.*?)\s+(\d{1,2})\s*[xX×]\s*(\d{1,3}(?:\s*[-/a]\s*\d{1,3})*)\s*(?:reps?|repeti\S*)?$/))
-    || (m = resto.match(/^(.*?)\s+(\d{1,2})\s*s[ée]ries?\s*(?:de)?\s*(\d{1,3}(?:\s*[-/a]\s*\d{1,3})*)\s*(?:reps?|repeti\S*)?$/i))
-    || (tabela && (m = resto.match(/^(.*?)\s+(\d{1,2})\s+(\d{1,3}(?:\s*[-/]\s*\d{1,3})*)$/)))) {
-    resto = m[1]; series = +m[2]; reps = m[3].replace(/\s+/g, '').replace(/a/g, '-');
-  } else if (tabela && !reps && (m = resto.match(/^(.*?)\s+(\d{1,2})(?:\s+\S{1,3})?$/)) && +m[2] <= 10 && LETRAS.test(m[1])) {
-    // A série foi lida, a repetição veio ilegível: fica para conferir
-    resto = m[1]; series = +m[2]; duvida = !reps;
-  }
-  const nome = resto.replace(/[^\p{L}\p{N}+°ºª().,/ -]/gu, ' ').replace(/\s+/g, ' ').replace(/^[\s.,-]+|[\s.,-]+$/g, '');
-  if (!LETRAS.test(nome)) return null;
-  if (!tabela && !series && !reps) return null; // fora de tabela, só linha com séries ou tempo vira exercício
-  return {
-    nome: (nome.charAt(0).toUpperCase() + nome.slice(1)).slice(0, 60),
-    series: Math.min(20, Math.max(1, series || 1)),
-    reps: reps.slice(0, 12),
-    duvida,
-  };
 }
 
 // Em que dias colocar: se a pessoa já treina em N dias e a ficha tem N treinos, mantém os mesmos dias

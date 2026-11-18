@@ -6,7 +6,8 @@
   "scripts": {
     "test": "firebase emulators:exec --only firestore --project demo-treino-junto \"node --test --test-reporter=spec\"",
     "pretest": "node -e \"require('fs').copyFileSync('../firestore.rules','firestore.rules')\"",
-    "verificar": "node verificar-codigo.mjs"
+    "verificar": "node verificar-codigo.mjs",
+    "ficha": "node --test --test-reporter=spec ficha.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
