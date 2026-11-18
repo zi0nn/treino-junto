@@ -54,25 +54,29 @@ function prepararImagem(arquivo) {
 }
 
 export async function lerFicha(arquivo) {
-  S.ficha = { estado: 'lendo', etapa: 'Preparando a foto…', pct: 0 };
+  // Cada leitura tem o seu estado: se a pessoa cancelar e mandar outra foto, a leitura antiga
+  // (que ainda roda por trás) não mexe mais na tela
+  const minha = { estado: 'lendo', etapa: 'Preparando a foto…', pct: 0 };
+  const atual = () => S.ficha === minha;
+  S.ficha = minha;
   render();
   let worker;
   try {
     const [Tesseract, imagem] = await Promise.all([carregarLeitor(), prepararImagem(arquivo)]);
-    S.ficha.etapa = 'Baixando o leitor…'; render();
+    if (!atual()) return;
+    minha.etapa = 'Baixando o leitor…'; render();
     worker = await Tesseract.createWorker('por', 1, {
       langPath: IDIOMA,
       logger: m => {
-        if (!S.ficha || S.ficha.estado !== 'lendo') return;
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
-          if (pct !== S.ficha.pct) { S.ficha.etapa = 'Lendo a ficha…'; S.ficha.pct = pct; render(); }
-        }
+        if (!atual() || m.status !== 'recognizing text') return;
+        const pct = Math.round(m.progress * 100);
+        if (pct !== minha.pct) { minha.etapa = 'Lendo a ficha…'; minha.pct = pct; render(); }
       },
     });
+    if (!atual()) return;
     await worker.setParameters({ tessedit_pageseg_mode: '6' }); // a página como um bloco de linhas (tabela)
     const { data } = await worker.recognize(imagem);
-    if (!S.ficha) return; // cancelou enquanto lia
+    if (!atual()) return; // cancelou (ou mandou outra foto) enquanto lia
     const treinos = interpretarFicha(data.text.split('\n')).filter(t => t.exercicios.length);
     if (!treinos.length) {
       S.ficha = { estado: 'erro', erro: 'Não encontrei exercícios nessa foto. Tente uma foto mais de perto, reta e com boa luz, ou um print da ficha.' };
@@ -83,7 +87,7 @@ export async function lerFicha(arquivo) {
     }
   } catch (err) {
     console.error(err);
-    if (S.ficha) S.ficha = { estado: 'erro', erro: err.message?.startsWith('Não') ? err.message : mensagemErro(err) };
+    if (atual()) S.ficha = { estado: 'erro', erro: err.message?.startsWith('Não') ? err.message : mensagemErro(err) };
   } finally {
     worker?.terminate();
     render();

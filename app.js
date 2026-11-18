@@ -344,7 +344,7 @@ if (Store.configurado) {
     S.checkin = { aberto: false, foto: null, processando: false, enviando: false };
     // O que era da conta anterior neste aparelho (modo treino, primeiro acesso, apagar conta) não passa para a próxima
     try { S.modo?.wake?.release(); } catch { /* ok */ }
-    S.modo = null; S.bv = null; S.apagar = null; S.opcaoHoje = null; S.editandoEx = null;
+    S.modo = null; S.bv = null; S.apagar = null; S.opcaoHoje = null; S.editandoEx = null; S.ficha = null;
     planoMigrado = false; boasVindasMigrado = false;
     pararDescanso();
     pararDeAcompanhar();
